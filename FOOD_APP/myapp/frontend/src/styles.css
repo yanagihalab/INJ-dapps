@@ -1,0 +1,44 @@
+/* ====== ここから 置き換え／追記 ====== */
+:root {
+  --bg:#0f172a; --panel:#111827; --muted:#9aa4b2; --fg:#e5e7eb;
+  --acc:#38bdf8; --ok:#10b981; --border:#1f2937;
+}
+
+/* 全体の余白・幅を広げる */
+body { margin:0; background:var(--bg); color:var(--fg); }
+header { padding:20px 28px; border-bottom:1px solid var(--border); }
+main { display:grid; grid-template-columns: 440px 1fr; gap:24px; padding:24px; }
+@media (max-width: 1280px) { main { grid-template-columns: 1fr; } }
+
+/* カード/パネルを広く・余白多めに */
+.card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:18px 20px; }
+.card h2 { margin:0 0 12px; font-size:18px; color:var(--acc); }
+
+/* 入力の高さ/行間をUP */
+.row { display:flex; gap:12px; margin-bottom:10px; }
+.row > * { flex:1; }
+label { display:block; font-size:12px; color:var(--muted); margin-bottom:6px; }
+input, textarea {
+  width:100%; padding:12px 14px; background:#0b1220; color:var(--fg);
+  border:1px solid var(--border); border-radius:10px; font-size:14px;
+}
+textarea { min-height:120px; }
+
+/* アクション側のカード（pane）を大きく */
+.grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); }
+.pane { background:#0b1220; border:1px solid var(--border); border-radius:12px; padding:14px; min-height:220px; }
+.pane h3 { margin:0 0 10px; font-size:16px; }
+
+/* 出力エリアを大きく（各パネル内の <pre> と、下部のメイン出力 .out） */
+pre, .out {
+  background:#0b1220; border:1px dashed var(--border); border-radius:10px;
+  padding:14px; font:13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space:pre-wrap; overflow:auto; max-height:none; min-height:260px;
+}
+
+/* 画面いっぱいに広げたい時のフルスクリーン用（任意で使えます） */
+.pane.fullscreen {
+  position:fixed; inset:20px; z-index:1000; overflow:auto;
+}
+.pane.fullscreen pre { min-height:60vh; }
+/* ====== ここまで ====== */

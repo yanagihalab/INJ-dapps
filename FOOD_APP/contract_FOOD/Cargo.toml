@@ -1,0 +1,25 @@
+[package]
+name = "tabelog-review"
+version = "0.2.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "CosmWasm contract for visit-gated reviews with native tipping (escrow fixed)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# cosmwasm-template 由来の警告を抑えるために定義（本実装では未使用）
+library = []
+
+[dependencies]
+cosmwasm-std = "1.5.0"
+cosmwasm-schema = "1.5.0"
+cw2 = "1.1.2"
+cw-storage-plus = "1.2.0"
+schemars = "0.8"
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+
+[dev-dependencies]
+cosmwasm-schema = "1.5.0"

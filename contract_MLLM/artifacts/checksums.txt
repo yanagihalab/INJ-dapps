@@ -1,0 +1,1 @@
+5cf22b505e3ad2678cc5bdcc90d860e36e91433eaf55742ac6df2a51c795fe3c  contract_FOOD.wasm

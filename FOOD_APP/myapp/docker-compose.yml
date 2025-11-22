@@ -1,0 +1,38 @@
+services:
+  inj-web-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports: ["8787:8787"]
+    environment:
+      INJ_HOME_HOST_PATH: "/home/admin-y/.injective"
+      KEYNAME: "mykey"
+      INJ_NODE: "https://k8s.testnet.tm.injective.network:443"
+      INJ_CHAIN_ID: "injective-888"
+      CONTRACT: "inj1s337ldwtv94ttd6nst76n00vwpl4crjelv5754"
+      DATA_DIR: "/data"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - injweb_data:/data
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - backend   # ← 追加（frontend から "backend" で解決可能に）
+
+  inj-web-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_BACKEND_ORIGIN: "http://backend:8787"
+    restart: unless-stopped
+    depends_on:
+      - inj-web-backend        # ← 追加（起動順の明示）
+    networks:
+      - default                # （明示。無くても default に入ります）
+
+volumes:
+  injweb_data: {}

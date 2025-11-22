@@ -1,0 +1,30 @@
+services:
+  inj-web-backend:
+    build:
+      context: ./backend           # ★フロントを含めない
+      dockerfile: Dockerfile
+    # container_name: は無くてもOK（衝突回避のため外すのが無難）
+    ports:
+      - "8787:8787"
+    environment:
+      INJ_HOME_HOST_PATH: "/home/admin-y/.injective"
+      KEYNAME: "mykey"
+      INJ_NODE: "https://k8s.testnet.tm.injective.network:443"
+      INJ_CHAIN_ID: "injective-888"
+      CONTRACT: "inj1s337ldwtv94ttd6nst76n00vwpl4crjelv5754"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # ★必要
+    command: ["node","server.js"]
+
+
+  inj-web-frontend:
+    container_name: inj-web-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "5173:5173"     # Vite dev / または 4173:4173（プレビュー）のいずれか
+    # フロントでホットリロードしたい場合のみ、下記を使います（任意）
+    # volumes:
+    #   - ./frontend:/app

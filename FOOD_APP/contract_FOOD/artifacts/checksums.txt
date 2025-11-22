@@ -1,0 +1,2 @@
+5cf22b505e3ad2678cc5bdcc90d860e36e91433eaf55742ac6df2a51c795fe3c  contract_FOOD.wasm
+fb015452f5cc4075c47ea21f49a51e1c0cd9fb93fbaf6b3fd4266d8cafb3ac0c  tabelog_review.wasm
