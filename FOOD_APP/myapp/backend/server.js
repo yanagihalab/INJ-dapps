@@ -58,7 +58,7 @@ let CFG = {
   myAddr: process.env.MY_ADDR || '',
   codeId: process.env.CODE_ID || '',
   contract: process.env.CONTRACT || '',
-  injNode: process.env.INJ_NODE || 'https://k8s.testnet.tm.injective.network:443',
+  injNode: process.env.INJ_NODE || 'https://testnet.sentry.tm.injective.network:443', // 'https://k8s.testnet.tm.injective.network:443',
   chainId: process.env.INJ_CHAIN_ID || 'injective-888',
   injectiveHomeHostPath: process.env.INJ_HOME_HOST_PATH || '', // absolute host path
   gasAdjustment: '1.5',
