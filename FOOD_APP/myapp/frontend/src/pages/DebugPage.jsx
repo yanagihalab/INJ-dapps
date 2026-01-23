@@ -81,12 +81,13 @@ export default function DebugPage() {
 
   const doHealth = async () => {
     try {
-      const r = await API.get('/health'); // → /api/health
+      const r = await API.health(); // → /api/health
       setHealthOut(j(r));
     } catch (e) {
       setHealthOut(j({ error: String(e) }));
     }
   };
+
 
   const doListByCode = async () => {
     try {

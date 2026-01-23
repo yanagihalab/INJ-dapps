@@ -1,0 +1,19 @@
+{
+  "app": {
+    "title": "INJ dApps",
+    "lang": "Language"
+  },
+  "nav": {
+    "home": "Home",
+    "debug": "Debug",
+    "prb": "PRB",
+    "neutronFaucet": "Neutron Faucet"
+  },
+  "debug": {
+    "title": "Debug",
+    "health": "Health",
+    "run": "Run",
+    "execute": "Execute (Tx)",
+    "reset": "Reset to defaults"
+  }
+}

@@ -3,23 +3,37 @@ name = "tabelog-review"
 version = "0.2.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "CosmWasm contract for visit-gated reviews with native tipping (escrow fixed)."
+description = "Review contract with QR commit (Pattern B / Method A)"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# cosmwasm-template 由来の警告を抑えるために定義（本実装では未使用）
+default = []
 library = []
 
 [dependencies]
-cosmwasm-std = "1.5.0"
-cosmwasm-schema = "1.5.0"
-cw2 = "1.1.2"
-cw-storage-plus = "1.2.0"
-schemars = "0.8"
+cosmwasm-std = "1.5"
+cw-storage-plus = "1.2"
+cw2 = "1.1"
+
 serde = { version = "1.0", features = ["derive"] }
+schemars = "0.8"
 thiserror = "1.0"
 
+# sha256
+sha2 = { version = "0.10.8", default-features = false }
+
 [dev-dependencies]
-cosmwasm-schema = "1.5.0"
+cosmwasm-schema = "1.5"
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = "abort"
+incremental = false
+overflow-checks = true

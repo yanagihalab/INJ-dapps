@@ -1,13 +1,20 @@
 use cosmwasm_std::{
-    attr, Addr, BankMsg, Coin, DepsMut, Env, MessageInfo, Response, StdResult, Timestamp,
+    attr, Addr, BankMsg, Coin, DepsMut, Env, MessageInfo, Order, Response, StdResult, Timestamp,
 };
+use sha2::{Digest, Sha256};
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, RecordPolicy};
+use crate::msg::ExecuteMsg;
 use crate::state::*;
 
+const MAX_QR_CODE_LEN: u32 = 512;
+const QR_COMMIT_LEN: usize = 32;
+
+// Admin 以外が登録できる店舗数上限
+const MAX_STORES_PER_OWNER_NON_ADMIN: u32 = 2;
+
 /// 管理者チェック
-fn only_admin(deps: &cosmwasm_std::DepsMut, sender: &Addr) -> Result<(), ContractError> {
+fn only_admin(deps: &DepsMut, sender: &Addr) -> Result<(), ContractError> {
     let cfg = CONFIG.load(deps.storage)?;
     if cfg.admin != *sender {
         return Err(ContractError::Unauthorized);
@@ -17,7 +24,7 @@ fn only_admin(deps: &cosmwasm_std::DepsMut, sender: &Addr) -> Result<(), Contrac
 
 /// 管理者 or 店舗オーナー権限チェック
 fn is_admin_or_store_owner(
-    deps: &cosmwasm_std::DepsMut,
+    deps: &DepsMut,
     store_id: StoreId,
     sender: &Addr,
 ) -> Result<(), ContractError> {
@@ -46,14 +53,32 @@ pub fn execute_msg(
         /* ================== Store ================== */
         ExecuteMsg::RegisterStore { store_ref, owner } => {
             let cfg = CONFIG.load(deps.storage)?;
-            if info.sender != cfg.admin {
-                return Err(ContractError::Unauthorized);
-            }
+
+            // admin は無制限（owner 指定も許可）
+            // admin 以外は「自分名義のみ」かつ登録数を上限で制限する
+            let owner_addr = if info.sender == cfg.admin {
+                owner.map(|o| deps.api.addr_validate(&o)).transpose()?
+            } else {
+                // Admin 以外は owner を指定しても無視し、送信者を owner とする（抜け道防止）
+                let mut owned: u32 = 0;
+                for item in STORES.range(deps.storage, None, None, Order::Ascending) {
+                    let (_sid, s) = item?;
+                    if s.owner.as_ref() == Some(&info.sender) {
+                        owned += 1;
+                        if owned >= MAX_STORES_PER_OWNER_NON_ADMIN {
+                            return Err(ContractError::StoreRegistrationLimitExceeded {
+                                max: MAX_STORES_PER_OWNER_NON_ADMIN,
+                            });
+                        }
+                    }
+                }
+                Some(info.sender.clone())
+            };
+
             let id = next_seq(&STORE_SEQ, deps.storage)?;
-            let owner_addr = owner.map(|o| deps.api.addr_validate(&o)).transpose()?;
             let store = Store {
                 id,
-                owner: owner_addr,
+                owner: owner_addr.clone(),
                 store_ref,
                 review_window_override: None,
                 active: true,
@@ -71,10 +96,17 @@ pub fn execute_msg(
             )?;
             Ok(Response::new()
                 .add_attribute("action", "register_store")
-                .add_attribute("store_id", id.to_string()))
+                .add_attribute("store_id", id.to_string())
+                .add_attribute(
+                    "owner",
+                    owner_addr
+                        .as_ref()
+                        .map(|a| a.to_string())
+                        .unwrap_or_else(|| "".to_string()),
+                ))
         }
 
-        ,ExecuteMsg::SetStoreStatus { store_id, active } => {
+        ExecuteMsg::SetStoreStatus { store_id, active } => {
             is_admin_or_store_owner(&deps, store_id, &info.sender)?;
             STORES.update(deps.storage, store_id, |s| {
                 s.ok_or(ContractError::NotFound).map(|mut st| {
@@ -89,7 +121,7 @@ pub fn execute_msg(
             ]))
         }
 
-        ,ExecuteMsg::SetStoreReviewWindow { store_id, secs } => {
+        ExecuteMsg::SetStoreReviewWindow { store_id, secs } => {
             is_admin_or_store_owner(&deps, store_id, &info.sender)?;
             STORES.update(deps.storage, store_id, |s| {
                 s.ok_or(ContractError::NotFound).map(|mut st| {
@@ -104,82 +136,15 @@ pub fn execute_msg(
             ]))
         }
 
-        /* ================== Visit ================== */
-        ,ExecuteMsg::RecordVisit { store_id, visitor, visited_at, memo } => {
-            let cfg = CONFIG.load(deps.storage)?;
-            let store = STORES
-                .load(deps.storage, store_id)
-                .map_err(|_| ContractError::NotFound)?;
-            if !store.active {
-                return Err(ContractError::StoreInactive);
-            }
+        /* ================== Visit (no-proof disabled) ================== */
+        ExecuteMsg::RecordVisit { .. } => Err(ContractError::RecordVisitDisabled),
 
-            // 記録ポリシーに応じた権限チェック
-            match cfg.record_policy {
-                RecordPolicy::AdminOnly => {
-                    if info.sender != cfg.admin {
-                        return Err(ContractError::Unauthorized);
-                    }
-                }
-                RecordPolicy::StoreOnly => {
-                    is_admin_or_store_owner(&deps, store_id, &info.sender)?;
-                }
-                RecordPolicy::Anyone => { /* no-op */ }
-            }
-
-            // visitor の確定（代理記録は admin / store owner のみ許可）
-            let visitor_addr = match visitor {
-                Some(v) => {
-                    if info.sender != cfg.admin {
-                        if let Some(owner) = &store.owner {
-                            if &info.sender != owner {
-                                return Err(ContractError::Forbidden);
-                            }
-                        } else {
-                            return Err(ContractError::Forbidden);
-                        }
-                    }
-                    deps.api.addr_validate(&v)?
-                }
-                None => info.sender.clone(),
-            };
-
-            let visited_ts =
-                Timestamp::from_seconds(visited_at.unwrap_or(env.block.time.seconds()));
-            let window = store
-                .review_window_override
-                .unwrap_or(cfg.review_window_secs);
-            let reviewable_until = visited_ts.plus_seconds(window);
-
-            let id = next_seq(&VISIT_SEQ, deps.storage)?;
-            let v = Visit {
-                id,
-                store_id,
-                visitor: visitor_addr.clone(),
-                visited_at: visited_ts,
-                reviewable_until,
-                reviewed: false,
-                revoked: false,
-                memo,
-            };
-            VISITS.save(deps.storage, id, &v)?;
-            VISITS_BY_VISITOR.save(deps.storage, (visitor_addr, id), &())?;
-
-            Ok(Response::new().add_attributes(vec![
-                attr("action", "record_visit"),
-                attr("visit_id", id.to_string()),
-                attr("store_id", store_id.to_string()),
-                attr("reviewable_until", reviewable_until.seconds().to_string()),
-            ]))
-        }
-
-        ,ExecuteMsg::RevokeVisit { visit_id } => {
+        ExecuteMsg::RevokeVisit { visit_id } => {
             let v = VISITS
                 .load(deps.storage, visit_id)
                 .map_err(|_| ContractError::NotFound)?;
             is_admin_or_store_owner(&deps, v.store_id, &info.sender)?;
             if v.reviewed {
-                // 既にレビューがある来店の取消は不可（運用ポリシー次第で変更可）
                 return Err(ContractError::Forbidden);
             }
             VISITS.update(deps.storage, visit_id, |old| {
@@ -193,8 +158,134 @@ pub fn execute_msg(
                 .add_attribute("visit_id", visit_id.to_string()))
         }
 
+        /* ================== QR (Pattern B / Method A) ================== */
+
+        // 店舗（owner/admin）が事前に commits (=sha256(code) 生32バイト) を補充する
+        ExecuteMsg::ProvisionQrCommits { store_id, commits } => {
+            if commits.is_empty() {
+                return Err(ContractError::QrCommitsEmpty);
+            }
+
+            // store existence + permission
+            let store = STORES
+                .load(deps.storage, store_id)
+                .map_err(|_| ContractError::NotFound)?;
+            is_admin_or_store_owner(&deps, store_id, &info.sender)?;
+
+            let mut first: Option<QrId> = None;
+            let mut last: QrId = 0;
+
+            for c in commits.into_iter() {
+                if c.len() != QR_COMMIT_LEN {
+                    return Err(ContractError::InvalidQrCommitLength {
+                        expected: QR_COMMIT_LEN,
+                        got: c.len(),
+                    });
+                }
+                let qr_id = next_qr_id(deps.storage, store_id)?;
+                QR_POOL.save(deps.storage, (store_id, qr_id), &c)?;
+
+                if first.is_none() {
+                    first = Some(qr_id);
+                }
+                last = qr_id;
+            }
+
+            // cursor が未初期化なら、今回の先頭に合わせる
+            if QR_CURSOR.may_load(deps.storage, store_id)?.is_none() {
+                if let Some(f) = first {
+                    QR_CURSOR.save(deps.storage, store_id, &f)?;
+                }
+            }
+
+            Ok(Response::new().add_attributes(vec![
+                attr("action", "provision_qr_commits"),
+                attr("store_id", store_id.to_string()),
+                attr("store_active", store.active.to_string()),
+                attr("count", (last - first.unwrap_or(last) + 1).to_string()),
+                attr("first_qr_id", first.unwrap_or(0).to_string()),
+                attr("last_qr_id", last.to_string()),
+            ]))
+        }
+
+        // ユーザーが code を提示して来店記録。成功でQR消費・cursorを次へ進める。
+        ExecuteMsg::RecordVisitByQr { store_id, code, memo } => {
+            if code.as_bytes().len() as u32 > MAX_QR_CODE_LEN {
+                return Err(ContractError::QrCodeTooLong { max: MAX_QR_CODE_LEN });
+            }
+
+            let cfg = CONFIG.load(deps.storage)?;
+            let store = STORES
+                .load(deps.storage, store_id)
+                .map_err(|_| ContractError::NotFound)?;
+            if !store.active {
+                return Err(ContractError::StoreInactive);
+            }
+
+            let qr_id = QR_CURSOR
+                .may_load(deps.storage, store_id)?
+                .ok_or(ContractError::QrNotInitialized)?;
+
+            if QR_USED
+                .may_load(deps.storage, (store_id, qr_id))?
+                .unwrap_or(false)
+            {
+                return Err(ContractError::QrAlreadyUsed);
+            }
+
+            let expected = QR_POOL
+                .may_load(deps.storage, (store_id, qr_id))?
+                .ok_or(ContractError::QrNotProvisioned)?;
+
+            let presented = cosmwasm_std::Binary::from(Sha256::digest(code.as_bytes()).to_vec());
+            if presented != expected {
+                return Err(ContractError::QrCommitMismatch);
+            }
+
+            // Visit を作成（visitorは sender 固定、visited_atは block time 固定）
+            let visited_ts: Timestamp = env.block.time;
+            let window = store.review_window_override.unwrap_or(cfg.review_window_secs);
+            let reviewable_until = visited_ts.plus_seconds(window);
+
+            let visit_id = next_seq(&VISIT_SEQ, deps.storage)?;
+            let v = Visit {
+                id: visit_id,
+                store_id,
+                visitor: info.sender.clone(),
+                visited_at: visited_ts,
+                reviewable_until,
+                reviewed: false,
+                revoked: false,
+                memo,
+            };
+            VISITS.save(deps.storage, visit_id, &v)?;
+
+            // state.rs が (&Addr, VisitId) を要求しているため参照で渡す
+            VISITS_BY_VISITOR.save(deps.storage, (&info.sender, visit_id), &())?;
+
+            // QR を消費し、次へ
+            QR_USED.save(deps.storage, (store_id, qr_id), &true)?;
+            let next = qr_id + 1;
+            QR_CURSOR.save(deps.storage, store_id, &next)?;
+
+            Ok(Response::new().add_attributes(vec![
+                attr("action", "record_visit_by_qr"),
+                attr("store_id", store_id.to_string()),
+                attr("visit_id", visit_id.to_string()),
+                attr("visitor", info.sender.to_string()),
+                attr("qr_id_used", qr_id.to_string()),
+                attr("qr_id_next", next.to_string()),
+                attr("reviewable_until", reviewable_until.seconds().to_string()),
+            ]))
+        }
+
         /* ================== Review ================== */
-        ,ExecuteMsg::CreateReview { visit_id, rating, title, body } => {
+        ExecuteMsg::CreateReview {
+            visit_id,
+            rating,
+            title,
+            body,
+        } => {
             let mut v = VISITS
                 .load(deps.storage, visit_id)
                 .map_err(|_| ContractError::NotFound)?;
@@ -215,11 +306,13 @@ pub fn execute_msg(
             if !(1..=5).contains(&rating) {
                 return Err(ContractError::InvalidRating);
             }
-            let blen = body.as_bytes().len() as u16;
-            if blen < cfg.min_text_len {
+
+            // usize のまま比較（u16キャストによる桁あふれ回避）
+            let blen = body.as_bytes().len();
+            if blen < cfg.min_text_len as usize {
                 return Err(ContractError::TextTooShort);
             }
-            if blen > cfg.max_text_len {
+            if blen > cfg.max_text_len as usize {
                 return Err(ContractError::TextTooLong);
             }
 
@@ -245,7 +338,9 @@ pub fn execute_msg(
             };
             REVIEWS.save(deps.storage, id, &review)?;
             REVIEWS_BY_STORE.save(deps.storage, (review.store_id, id), &())?;
-            REVIEWS_BY_REVIEWER.save(deps.storage, (review.reviewer.clone(), id), &())?;
+
+            // state.rs が (&Addr, ReviewId) を要求しているため参照で渡す
+            REVIEWS_BY_REVIEWER.save(deps.storage, (&review.reviewer, id), &())?;
 
             // チケット消費
             v.reviewed = true;
@@ -273,9 +368,12 @@ pub fn execute_msg(
             ]))
         }
 
-        // ★ E0500 対策済み：クロージャ内で他ストレージに触らない構造に変更
-        ,ExecuteMsg::EditReview { review_id, rating, title, body } => {
-            // 先にレビューをロードして編集 → 保存 → 必要なら集計を更新
+        ExecuteMsg::EditReview {
+            review_id,
+            rating,
+            title,
+            body,
+        } => {
             let mut rr = REVIEWS
                 .load(deps.storage, review_id)
                 .map_err(|_| ContractError::NotFound)?;
@@ -284,7 +382,6 @@ pub fn execute_msg(
             }
 
             let cfg = CONFIG.load(deps.storage)?;
-            // rating の変更があれば (old, new) を保持して後で集計に反映
             let mut rating_delta: Option<(u8, u8)> = None;
             if let Some(new_rating) = rating {
                 if !(1..=5).contains(&new_rating) {
@@ -300,21 +397,19 @@ pub fn execute_msg(
                 rr.title = Some(t);
             }
             if let Some(b) = body {
-                let blen = b.as_bytes().len() as u16;
-                if blen < cfg.min_text_len {
+                let blen = b.as_bytes().len();
+                if blen < cfg.min_text_len as usize {
                     return Err(ContractError::TextTooShort);
                 }
-                if blen > cfg.max_text_len {
+                if blen > cfg.max_text_len as usize {
                     return Err(ContractError::TextTooLong);
                 }
                 rr.body = b;
             }
             rr.edited_at = Some(env.block.time);
 
-            // 先にレビューを保存
             REVIEWS.save(deps.storage, review_id, &rr)?;
 
-            // rating が変わっていれば集計を調整（ここはクロージャ外なので二重借用にならない）
             if let Some((old, new)) = rating_delta {
                 STORE_AGG.update(deps.storage, rr.store_id, |agg| -> StdResult<_> {
                     let mut a = agg.unwrap();
@@ -329,7 +424,7 @@ pub fn execute_msg(
             ]))
         }
 
-        ,ExecuteMsg::HideReview { review_id, .. } => {
+        ExecuteMsg::HideReview { review_id } => {
             let rr = REVIEWS
                 .load(deps.storage, review_id)
                 .map_err(|_| ContractError::NotFound)?;
@@ -347,7 +442,7 @@ pub fn execute_msg(
         }
 
         /* ================== Tips (Native, Escrow-fixed) ================== */
-        ,ExecuteMsg::TipReviewNative { review_id } => {
+        ExecuteMsg::TipReviewNative { review_id } => {
             let rr = REVIEWS
                 .load(deps.storage, review_id)
                 .map_err(|_| ContractError::NotFound)?;
@@ -369,23 +464,22 @@ pub fn execute_msg(
                 }
             }
 
-            // 手数料（切り捨て）と純額
             let fee = amount.multiply_ratio(cfg.fee_bps as u128, 10_000u128);
             let net = amount.checked_sub(fee).unwrap();
 
-            // 合計記録
             TOTAL_TIPS_NATIVE.update(
                 deps.storage,
                 (review_id, denom.clone()),
                 |v| -> StdResult<_> { Ok(v.unwrap_or_default() + amount) },
             )?;
-            // エスクロー（レビュアー）
+
+            // state.rs が (&Addr, String) を要求しているため参照で渡す
             ESCROW_NATIVE.update(
                 deps.storage,
-                (rr.reviewer.clone(), denom.clone()),
+                (&rr.reviewer, denom.clone()),
                 |v| -> StdResult<_> { Ok(v.unwrap_or_default() + net) },
             )?;
-            // プラットフォーム手数料
+
             FEE_NATIVE.update(
                 deps.storage,
                 denom.clone(),
@@ -404,16 +498,17 @@ pub fn execute_msg(
         }
 
         /* ================== Withdraws ================== */
-        ,ExecuteMsg::WithdrawTips { to, denom, amount } => {
+        ExecuteMsg::WithdrawTips { to, denom, amount } => {
             let recipient = to
                 .map(|s| deps.api.addr_validate(&s))
                 .transpose()?
                 .unwrap_or(info.sender.clone());
 
-            let key = (info.sender.clone(), denom.clone());
+            // state.rs が (&Addr, String) を要求しているため、そのまま参照で渡す
             let bal = ESCROW_NATIVE
-                .may_load(deps.storage, key.clone())?
+                .may_load(deps.storage, (&info.sender, denom.clone()))?
                 .unwrap_or_default();
+
             if bal.is_zero() {
                 return Err(ContractError::AmountZero);
             }
@@ -421,7 +516,8 @@ pub fn execute_msg(
             if amt > bal {
                 return Err(ContractError::InvalidFunds);
             }
-            ESCROW_NATIVE.save(deps.storage, key, &(bal - amt))?;
+
+            ESCROW_NATIVE.save(deps.storage, (&info.sender, denom.clone()), &(bal - amt))?;
 
             Ok(Response::new()
                 .add_message(BankMsg::Send {
@@ -435,7 +531,7 @@ pub fn execute_msg(
                 ]))
         }
 
-        ,ExecuteMsg::WithdrawPlatformFees { to, denom, amount } => {
+        ExecuteMsg::WithdrawPlatformFees { to, denom, amount } => {
             only_admin(&deps, &info.sender)?;
             let cfg = CONFIG.load(deps.storage)?;
             let recipient = to
@@ -468,7 +564,7 @@ pub fn execute_msg(
         }
 
         /* ================== Config Update ================== */
-        ,ExecuteMsg::UpdateConfig {
+        ExecuteMsg::UpdateConfig {
             admin,
             fee_bps,
             fee_receiver,

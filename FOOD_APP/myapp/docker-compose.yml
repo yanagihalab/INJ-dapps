@@ -6,10 +6,11 @@ services:
     ports: ["8787:8787"]
     environment:
       INJ_HOME_HOST_PATH: "/home/admin-y/.injective"
-      KEYNAME: "mykey"
-      INJ_NODE: "https://testnet.sentry.tm.injective.network:443" # "https://k8s.testnet.tm.injective.network:443"
+      KEYRING_BACKEND: "test"   # ← 追加（重要）
+      MY_ADDR: "inj1asat39g7t8r3hltxmmh9xjsdeklvtnznr98mha"  # ← 追加（任意だが推奨）
+      INJ_NODE: "https://testnet.sentry.tm.injective.network:443"
       INJ_CHAIN_ID: "injective-888"
-      CONTRACT: "inj1s337ldwtv94ttd6nst76n00vwpl4crjelv5754"
+      CONTRACT: "inj12xh3uxh52907paddul52gd8cn7yqps78u5sgza"
       DATA_DIR: "/data"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

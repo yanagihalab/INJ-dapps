@@ -1,3 +1,4 @@
+// sudo docker compose build --no-cache
 // frontend/src/App.jsx
 import React from "react";
 import { Routes, Route, NavLink } from "react-router-dom";
@@ -24,6 +25,8 @@ import AccountManager from "./pages/accounts/AccountManager.jsx";
 import KeyLogin from "./pages/accounts/KeyLogin.jsx";
 
 import DebugPage from "./pages/DebugPage.jsx";
+import MinimumDebugPage from "./pages/MinimumDebugPage.jsx";
+import MinimumDebugPageOnKeplrPage from "./pages/MinimumDebugPageOnKeplrPage.jsx";
 
 export default function App() {
   return (
@@ -33,6 +36,8 @@ export default function App() {
         <nav>
           <NavLink to="/">Home</NavLink>
           <NavLink to="/debug">Debug</NavLink>
+          <NavLink to="/minimum-debug">Minimum Debug Page（最小動作確認）</NavLink>
+          <NavLink to="/minimum-debug-keplr">Minimum Debug on Keplr Page（最小動作確認）</NavLink>
         </nav>
       </header>
 
@@ -104,6 +109,8 @@ export default function App() {
 
           {/* Debug */}
           <Route path="/debug" element={<DebugPage />} />
+          <Route path="/minimum-debug" element={<MinimumDebugPage />} />
+          <Route path="/minimum-debug-keplr" element={<MinimumDebugPageOnKeplrPage />} />
         </Routes>
       </div>
     </>

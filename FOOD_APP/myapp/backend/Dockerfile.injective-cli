@@ -1,0 +1,4 @@
+FROM injectivelabs/injective-core:v1.17.2
+COPY inj-cli.sh /usr/local/bin/inj
+RUN chmod +x /usr/local/bin/inj
+ENTRYPOINT ["inj"]
