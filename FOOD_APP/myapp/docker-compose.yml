@@ -3,18 +3,35 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports: ["8787:8787"]
+    ports:
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8787}:8787"
     environment:
-      INJ_HOME_HOST_PATH: "/home/admin-y/.injective"
-      KEYRING_BACKEND: "test"   # ← 追加（重要）
-      MY_ADDR: "inj1asat39g7t8r3hltxmmh9xjsdeklvtnznr98mha"  # ← 追加（任意だが推奨）
-      INJ_NODE: "https://testnet.sentry.tm.injective.network:443"
-      INJ_CHAIN_ID: "injective-888"
-      CONTRACT: "inj12xh3uxh52907paddul52gd8cn7yqps78u5sgza"
+      PORT: "8787"
+      CORS_ORIGIN: "${CORS_ORIGIN:-}"
+      KEYLESS_MODE: "${KEYLESS_MODE:-true}"
+      INJ_HOME_HOST_PATH: "${INJ_HOME_HOST_PATH:-}"
+      KEYNAME: "${KEYNAME:-}"
+      KEYRING_BACKEND: "${KEYRING_BACKEND:-test}"
+      MY_ADDR: "${MY_ADDR:-}"
+      CODE_ID: "${CODE_ID:-}"
+      CONTRACT: "${CONTRACT:-}"
+      INJ_NODE: "${INJ_NODE:-https://testnet.sentry.tm.injective.network:443}"
+      INJ_LCD_REST: "${INJ_LCD_REST:-https://testnet.sentry.lcd.injective.network:443}"
+      INJ_CHAIN_ID: "${INJ_CHAIN_ID:-injective-888}"
+      INJ_IMAGE: "${INJ_IMAGE:-injective-ubuntu:latest}"
+      GAS_ADJ: "${GAS_ADJ:-1.6}"
+      DEFAULT_FEES: "${DEFAULT_FEES:-1000000000000000inj}"
+      WASM_HOST_PATH: "${WASM_HOST_PATH:-}"
       DATA_DIR: "/data"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - injweb_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8787/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     restart: unless-stopped
     networks:
       default:
@@ -26,14 +43,19 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     ports:
-      - "5173:5173"
-    environment:
-      VITE_BACKEND_ORIGIN: "http://backend:8787"
+      - "${HTTP_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
     restart: unless-stopped
     depends_on:
-      - inj-web-backend        # ← 追加（起動順の明示）
+      inj-web-backend:
+        condition: service_healthy
     networks:
-      - default                # （明示。無くても default に入ります）
+      - default
 
 volumes:
   injweb_data: {}

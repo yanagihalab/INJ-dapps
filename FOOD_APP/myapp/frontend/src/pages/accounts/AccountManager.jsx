@@ -116,23 +116,32 @@ export default function AccountManager() {
   }
 
   async function onCreateDummy() {
-    setCreateOut(j({
-      created: true,
-      name: newName.trim() || 'reviewer1',
-      note: '鍵の実作成は inj CLI / 既存 UI を使用してください（このボタンは案内のみ）。'
-    }));
+    setCreateOut('');
+    const name = newName.trim() || 'reviewer1';
+    try {
+      const r = await API.keysAdd({ name, overwrite: false, setCurrent: true });
+      setCreateOut(j(r));
+      await reloadKeys();
+      const c2 = await API.getConfig();
+      setCfg(c2);
+      setCurrentName(c2.keyname || name);
+      setCurrentAddr(c2.myAddr || r.address || '');
+      if (c2.myAddr || r.address) await refreshAuthStatus({ address: c2.myAddr || r.address });
+    } catch (e) {
+      setCreateOut(j({ ok: false, error: String(e?.message || e) }));
+    }
   }
 
   return (
     <div className="container">
       <div className="page">
-        <h2>アカウント管理（レビュー投稿者）</h2>
+        <h2>レビュアーアカウント</h2>
 
         <div className="grid">
 
           {/* 現在のアカウント + クイックセレクタ */}
           <div className="card">
-            <h3>現在のアカウント</h3>
+            <h3>現在のレビュアー</h3>
 
             <label>Key name（ローカル keyring）</label>
             <div className="row" style={{ gap: 8 }}>
@@ -150,7 +159,7 @@ export default function AccountManager() {
                   setCurrentName(keys[0].name);
                   setCurrentAddr(keys[0].address || '');
                 }
-              }}>先頭を仮選択</button>
+              }}>先頭を選択</button>
             </div>
 
             <label style={{ marginTop: 8 }}>Address</label>
@@ -175,7 +184,7 @@ export default function AccountManager() {
 
           {/* 既存キー一覧（選択可能） */}
           <div className="card">
-            <h3>ローカル keyring の keyname 一覧</h3>
+            <h3>利用できるウォレット</h3>
             {keys.length === 0 ? (
               <div className="muted">（キーが見つかりませんでした）</div>
             ) : (
@@ -202,20 +211,20 @@ export default function AccountManager() {
             )}
           </div>
 
-          {/* 新規キーペア作成（案内） */}
+          {/* 新規キーペア作成 */}
           <div className="card">
-            <h3>新規キーペア作成（test keyring の案内）</h3>
+            <h3>新しいレビュアーを作成</h3>
             <label>name</label>
             <input value={newName} onChange={(e)=>setNewName(e.target.value)} placeholder="reviewer1" />
             <div className="row" style={{marginTop:8}}>
-              <button className="btn" onClick={onCreateDummy}>作成（ダミー）</button>
+              <button className="btn" onClick={onCreateDummy}>作成して現在のキーにする</button>
             </div>
             <pre className="out" style={{marginTop:8}}>{createOut}</pre>
           </div>
 
           {/* アプリ内パスワード */}
           <div className="card">
-            <h3>アプリ内パスワード</h3>
+            <h3>ログイン用パスワード</h3>
             <div className="muted">* 開発用。ブロックチェーン鍵とは無関係です。</div>
 
             <h4 style={{marginTop:10}}>設定</h4>

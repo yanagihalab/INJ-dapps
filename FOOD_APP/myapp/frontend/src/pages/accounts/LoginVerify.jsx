@@ -9,6 +9,7 @@ export default function LoginVerify() {
   const [statusOut, setStatusOut] = useState('');
   const [password, setPassword] = useState('');
   const [resultOut, setResultOut] = useState('');
+  const [keys, setKeys] = useState([]);
 
   useEffect(() => {
     // 初期値: CFG からアドレスを読み込み、ステータスを取得
@@ -17,6 +18,8 @@ export default function LoginVerify() {
         const cfg = await API.getConfig();
         const addr = cfg?.myAddr || '';
         setAddress(addr);
+        const keyResp = await API.keysList().catch(() => null);
+        setKeys(keyResp?.keys || []);
         if (addr) await refreshStatus(addr);
       } catch (e) {
         setStatusOut(j({ error: String(e) }));
@@ -49,18 +52,7 @@ export default function LoginVerify() {
     if (!password) { setResultOut(j({ error: 'password is empty' })); return; }
 
     try {
-      let r = null;
-      if (API.authVerifyPassword) {
-        // 推奨エンドポイント
-        r = await API.authVerifyPassword({ address, password });
-      } else if (API.verifyPassword) {
-        // 互換（古い実装のためのフォールバック: (password, address)）
-        r = await API.verifyPassword(password, address);
-      } else if (API.accounts?.verifyPassword) {
-        r = await API.accounts.verifyPassword({ address, password });
-      } else {
-        throw new Error('verify API is not available');
-      }
+      const r = await API.authVerifyPassword({ address, password });
       setResultOut(j(r));
     } catch (e) {
       setResultOut(j({ error: String(e) }));
@@ -78,11 +70,15 @@ export default function LoginVerify() {
         <div className="card">
           <h3>対象アドレス</h3>
           <label>address</label>
-          <input
+          <select
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="inj1..."
-          />
+          >
+            <option value="">アドレスを選択</option>
+            {keys.map((key) => (
+              <option key={key.address || key.name} value={key.address}>{key.name} - {key.address}</option>
+            ))}
+          </select>
           <div className="row" style={{ marginTop: 8 }}>
             <button className="btn" onClick={() => refreshStatus(address)}>状態を更新</button>
           </div>

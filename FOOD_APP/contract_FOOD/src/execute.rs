@@ -8,10 +8,22 @@ use crate::msg::ExecuteMsg;
 use crate::state::*;
 
 const MAX_QR_CODE_LEN: u32 = 512;
+const MAX_STORE_REGISTRATION_CODE_LEN: u32 = 256;
 const QR_COMMIT_LEN: usize = 32;
+const STORE_REGISTRATION_COMMIT_LEN: usize = 32;
 
 // Admin 以外が登録できる店舗数上限
 const MAX_STORES_PER_OWNER_NON_ADMIN: u32 = 2;
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
 
 /// 管理者チェック
 fn only_admin(deps: &DepsMut, sender: &Addr) -> Result<(), ContractError> {
@@ -51,7 +63,40 @@ pub fn execute_msg(
 ) -> Result<Response, ContractError> {
     match msg {
         /* ================== Store ================== */
-        ExecuteMsg::RegisterStore { store_ref, owner } => {
+        ExecuteMsg::RegisterStore {
+            auth_code,
+            store_ref,
+            name,
+            category,
+            address,
+            phone,
+            website,
+            opening_hours,
+            price_range,
+            image_url,
+            description,
+            owner,
+        } => {
+            let auth_code = auth_code.trim().to_string();
+            if auth_code.is_empty() {
+                return Err(ContractError::StoreRegistrationCodeRequired);
+            }
+            if auth_code.as_bytes().len() as u32 > MAX_STORE_REGISTRATION_CODE_LEN {
+                return Err(ContractError::StoreRegistrationCodeTooLong {
+                    max: MAX_STORE_REGISTRATION_CODE_LEN,
+                });
+            }
+
+            let auth_commit =
+                cosmwasm_std::Binary::from(Sha256::digest(auth_code.as_bytes()).to_vec());
+            let auth_commit_key = bytes_to_hex(auth_commit.as_slice());
+            let used = STORE_REGISTRATION_CODES
+                .may_load(deps.storage, auth_commit_key.clone())?
+                .ok_or(ContractError::StoreRegistrationCodeNotProvisioned)?;
+            if used {
+                return Err(ContractError::StoreRegistrationCodeAlreadyUsed);
+            }
+
             let cfg = CONFIG.load(deps.storage)?;
 
             // admin は無制限（owner 指定も許可）
@@ -80,10 +125,22 @@ pub fn execute_msg(
                 id,
                 owner: owner_addr.clone(),
                 store_ref,
+                name,
+                category,
+                address,
+                phone,
+                website,
+                opening_hours,
+                price_range,
+                image_url,
+                description,
                 review_window_override: None,
+                created_at: env.block.time,
+                updated_at: None,
                 active: true,
             };
             STORES.save(deps.storage, id, &store)?;
+            STORE_REGISTRATION_CODES.save(deps.storage, auth_commit_key, &true)?;
             STORE_AGG.save(
                 deps.storage,
                 id,
@@ -106,11 +163,102 @@ pub fn execute_msg(
                 ))
         }
 
+        ExecuteMsg::ProvisionStoreRegistrationCodes { commits } => {
+            only_admin(&deps, &info.sender)?;
+            if commits.is_empty() {
+                return Err(ContractError::StoreRegistrationCodesEmpty);
+            }
+
+            for c in commits.iter() {
+                if c.len() != STORE_REGISTRATION_COMMIT_LEN {
+                    return Err(ContractError::InvalidStoreRegistrationCommitLength {
+                        expected: STORE_REGISTRATION_COMMIT_LEN,
+                        got: c.len(),
+                    });
+                }
+                let commit_key = bytes_to_hex(c.as_slice());
+                if STORE_REGISTRATION_CODES
+                    .may_load(deps.storage, commit_key.clone())?
+                    .is_some()
+                {
+                    return Err(ContractError::StoreRegistrationCodeAlreadyProvisioned);
+                }
+                STORE_REGISTRATION_CODES.save(deps.storage, commit_key, &false)?;
+            }
+
+            Ok(Response::new().add_attributes(vec![
+                attr("action", "provision_store_registration_codes"),
+                attr("count", commits.len().to_string()),
+            ]))
+        }
+
+        ExecuteMsg::UpdateStore {
+            store_id,
+            store_ref,
+            name,
+            category,
+            address,
+            phone,
+            website,
+            opening_hours,
+            price_range,
+            image_url,
+            description,
+            owner,
+        } => {
+            is_admin_or_store_owner(&deps, store_id, &info.sender)?;
+            let owner_addr = owner.map(|o| deps.api.addr_validate(&o)).transpose()?;
+            STORES.update(deps.storage, store_id, |s| {
+                s.ok_or(ContractError::NotFound).map(|mut st| {
+                    if let Some(v) = store_ref {
+                        st.store_ref = v;
+                    }
+                    if name.is_some() {
+                        st.name = name;
+                    }
+                    if category.is_some() {
+                        st.category = category;
+                    }
+                    if address.is_some() {
+                        st.address = address;
+                    }
+                    if phone.is_some() {
+                        st.phone = phone;
+                    }
+                    if website.is_some() {
+                        st.website = website;
+                    }
+                    if opening_hours.is_some() {
+                        st.opening_hours = opening_hours;
+                    }
+                    if price_range.is_some() {
+                        st.price_range = price_range;
+                    }
+                    if image_url.is_some() {
+                        st.image_url = image_url;
+                    }
+                    if description.is_some() {
+                        st.description = description;
+                    }
+                    if owner_addr.is_some() {
+                        st.owner = owner_addr;
+                    }
+                    st.updated_at = Some(env.block.time);
+                    st
+                })
+            })?;
+            Ok(Response::new().add_attributes(vec![
+                attr("action", "update_store"),
+                attr("store_id", store_id.to_string()),
+            ]))
+        }
+
         ExecuteMsg::SetStoreStatus { store_id, active } => {
             is_admin_or_store_owner(&deps, store_id, &info.sender)?;
             STORES.update(deps.storage, store_id, |s| {
                 s.ok_or(ContractError::NotFound).map(|mut st| {
                     st.active = active;
+                    st.updated_at = Some(env.block.time);
                     st
                 })
             })?;
@@ -126,6 +274,7 @@ pub fn execute_msg(
             STORES.update(deps.storage, store_id, |s| {
                 s.ok_or(ContractError::NotFound).map(|mut st| {
                     st.review_window_override = Some(secs);
+                    st.updated_at = Some(env.block.time);
                     st
                 })
             })?;
@@ -159,7 +308,6 @@ pub fn execute_msg(
         }
 
         /* ================== QR (Pattern B / Method A) ================== */
-
         // 店舗（owner/admin）が事前に commits (=sha256(code) 生32バイト) を補充する
         ExecuteMsg::ProvisionQrCommits { store_id, commits } => {
             if commits.is_empty() {
@@ -182,8 +330,16 @@ pub fn execute_msg(
                         got: c.len(),
                     });
                 }
+                let commit_key = bytes_to_hex(c.as_slice());
+                if QR_COMMIT_INDEX
+                    .may_load(deps.storage, (store_id, commit_key.clone()))?
+                    .is_some()
+                {
+                    return Err(ContractError::QrAlreadyProvisioned);
+                }
                 let qr_id = next_qr_id(deps.storage, store_id)?;
                 QR_POOL.save(deps.storage, (store_id, qr_id), &c)?;
+                QR_COMMIT_INDEX.save(deps.storage, (store_id, commit_key), &qr_id)?;
 
                 if first.is_none() {
                     first = Some(qr_id);
@@ -209,9 +365,15 @@ pub fn execute_msg(
         }
 
         // ユーザーが code を提示して来店記録。成功でQR消費・cursorを次へ進める。
-        ExecuteMsg::RecordVisitByQr { store_id, code, memo } => {
+        ExecuteMsg::RecordVisitByQr {
+            store_id,
+            code,
+            memo,
+        } => {
             if code.as_bytes().len() as u32 > MAX_QR_CODE_LEN {
-                return Err(ContractError::QrCodeTooLong { max: MAX_QR_CODE_LEN });
+                return Err(ContractError::QrCodeTooLong {
+                    max: MAX_QR_CODE_LEN,
+                });
             }
 
             let cfg = CONFIG.load(deps.storage)?;
@@ -222,9 +384,11 @@ pub fn execute_msg(
                 return Err(ContractError::StoreInactive);
             }
 
-            let qr_id = QR_CURSOR
-                .may_load(deps.storage, store_id)?
-                .ok_or(ContractError::QrNotInitialized)?;
+            let presented = cosmwasm_std::Binary::from(Sha256::digest(code.as_bytes()).to_vec());
+            let commit_key = bytes_to_hex(presented.as_slice());
+            let qr_id = QR_COMMIT_INDEX
+                .may_load(deps.storage, (store_id, commit_key))?
+                .ok_or(ContractError::QrNotProvisioned)?;
 
             if QR_USED
                 .may_load(deps.storage, (store_id, qr_id))?
@@ -237,14 +401,15 @@ pub fn execute_msg(
                 .may_load(deps.storage, (store_id, qr_id))?
                 .ok_or(ContractError::QrNotProvisioned)?;
 
-            let presented = cosmwasm_std::Binary::from(Sha256::digest(code.as_bytes()).to_vec());
             if presented != expected {
                 return Err(ContractError::QrCommitMismatch);
             }
 
             // Visit を作成（visitorは sender 固定、visited_atは block time 固定）
             let visited_ts: Timestamp = env.block.time;
-            let window = store.review_window_override.unwrap_or(cfg.review_window_secs);
+            let window = store
+                .review_window_override
+                .unwrap_or(cfg.review_window_secs);
             let reviewable_until = visited_ts.plus_seconds(window);
 
             let visit_id = next_seq(&VISIT_SEQ, deps.storage)?;
@@ -262,11 +427,10 @@ pub fn execute_msg(
 
             // state.rs が (&Addr, VisitId) を要求しているため参照で渡す
             VISITS_BY_VISITOR.save(deps.storage, (&info.sender, visit_id), &())?;
+            VISITS_BY_STORE.save(deps.storage, (store_id, visit_id), &())?;
 
             // QR を消費し、次へ
             QR_USED.save(deps.storage, (store_id, qr_id), &true)?;
-            let next = qr_id + 1;
-            QR_CURSOR.save(deps.storage, store_id, &next)?;
 
             Ok(Response::new().add_attributes(vec![
                 attr("action", "record_visit_by_qr"),
@@ -274,7 +438,6 @@ pub fn execute_msg(
                 attr("visit_id", visit_id.to_string()),
                 attr("visitor", info.sender.to_string()),
                 attr("qr_id_used", qr_id.to_string()),
-                attr("qr_id_next", next.to_string()),
                 attr("reviewable_until", reviewable_until.seconds().to_string()),
             ]))
         }
@@ -480,11 +643,9 @@ pub fn execute_msg(
                 |v| -> StdResult<_> { Ok(v.unwrap_or_default() + net) },
             )?;
 
-            FEE_NATIVE.update(
-                deps.storage,
-                denom.clone(),
-                |v| -> StdResult<_> { Ok(v.unwrap_or_default() + fee) },
-            )?;
+            FEE_NATIVE.update(deps.storage, denom.clone(), |v| -> StdResult<_> {
+                Ok(v.unwrap_or_default() + fee)
+            })?;
 
             Ok(Response::new().add_attributes(vec![
                 attr("action", "tip_review"),

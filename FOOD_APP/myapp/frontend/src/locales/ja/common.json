@@ -4,17 +4,6 @@
     "lang": "言語"
   },
   "nav": {
-    "home": "ホーム",
-    "debug": "デバッグ",
-    "prb": "PRB",
-    "neutronFaucet": "Neutron Faucet"
-  },
-  "debug": {
-    "title": "デバッグ",
-    "health": "ヘルスチェック",
-    "run": "実行",
-    "execute": "実行（Tx）",
-    "reset": "デフォルトに戻す"
+    "home": "ホーム"
   }
 }
-

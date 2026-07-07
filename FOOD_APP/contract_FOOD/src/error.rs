@@ -18,6 +18,27 @@ pub enum ContractError {
     #[error("store registration limit exceeded: max={max}")]
     StoreRegistrationLimitExceeded { max: u32 },
 
+    #[error("store registration code is required")]
+    StoreRegistrationCodeRequired,
+
+    #[error("store registration code too long: max={max}")]
+    StoreRegistrationCodeTooLong { max: u32 },
+
+    #[error("store registration codes is empty")]
+    StoreRegistrationCodesEmpty,
+
+    #[error("invalid store registration commit length: expected={expected} got={got}")]
+    InvalidStoreRegistrationCommitLength { expected: usize, got: usize },
+
+    #[error("store registration code already provisioned")]
+    StoreRegistrationCodeAlreadyProvisioned,
+
+    #[error("store registration code not provisioned")]
+    StoreRegistrationCodeNotProvisioned,
+
+    #[error("store registration code already used")]
+    StoreRegistrationCodeAlreadyUsed,
+
     #[error("record visit is disabled")]
     RecordVisitDisabled,
 
@@ -66,6 +87,9 @@ pub enum ContractError {
 
     #[error("qr already used")]
     QrAlreadyUsed,
+
+    #[error("qr already provisioned")]
+    QrAlreadyProvisioned,
 
     #[error("qr not provisioned")]
     QrNotProvisioned,

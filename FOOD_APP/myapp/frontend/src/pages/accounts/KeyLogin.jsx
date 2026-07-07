@@ -87,18 +87,25 @@ export default function KeyLogin() {
   return (
     <div className="container">
       <div className="page">
-        <h2>ログイン検証（キー名 + パスワード）</h2>
+        <h2>レビュアーログイン</h2>
 
         {/* 対象キー */}
         <div className="card">
-          <h3>対象キー</h3>
+          <h3>ウォレットを選択</h3>
           <label>key name</label>
-          <input
+          <select
             value={keyName}
-            onChange={(e) => setKeyName(e.target.value)}
-            onBlur={() => resolveAddress(keyName)}
-            placeholder="reviewer1"
-          />
+            onChange={(e) => {
+              const picked = keys.find((k) => k.name === e.target.value);
+              if (picked) pickKey(picked);
+              else setKeyName(e.target.value);
+            }}
+          >
+            <option value="">キーを選択</option>
+            {keys.map((k) => (
+              <option key={k.name} value={k.name}>{k.name}</option>
+            ))}
+          </select>
           <div className="muted" style={{ marginTop: 6 }}>
             resolved address: <span style={{ fontFamily: "monospace" }}>{address || "-"}</span>
           </div>
@@ -110,12 +117,12 @@ export default function KeyLogin() {
 
         {/* 検証 */}
         <div className="card">
-          <h3>検証（ログイン）</h3>
+          <h3>パスワード確認</h3>
           <label>password</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn" onClick={checkStatus}>status</button>
-            <button className="btn ok" style={{ marginLeft: 8 }} onClick={verify}>verify_password</button>
+            <button className="btn" onClick={checkStatus}>状態を確認</button>
+            <button className="btn ok" style={{ marginLeft: 8 }} onClick={verify}>ログインする</button>
           </div>
 
           <h4 style={{ marginTop: 12 }}>status</h4>
@@ -127,7 +134,7 @@ export default function KeyLogin() {
 
         {/* テスト用：ログイン可能ユーザー候補 */}
         <div className="card">
-          <h3>（テスト用）ログイン可能ユーザー候補</h3>
+          <h3>ログイン候補</h3>
           <div className="muted">* ローカル keyring の一覧です</div>
           {keys.length === 0 ? (
             <div className="muted" style={{ marginTop: 8 }}>（キーがありません）</div>

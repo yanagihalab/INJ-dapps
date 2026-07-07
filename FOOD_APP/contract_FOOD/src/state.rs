@@ -54,7 +54,18 @@ pub struct Store {
     pub id: StoreId,
     pub owner: Option<Addr>,
     pub store_ref: String,
+    pub name: Option<String>,
+    pub category: Option<String>,
+    pub address: Option<String>,
+    pub phone: Option<String>,
+    pub website: Option<String>,
+    pub opening_hours: Option<String>,
+    pub price_range: Option<String>,
+    pub image_url: Option<String>,
+    pub description: Option<String>,
     pub review_window_override: Option<u64>,
+    pub created_at: Timestamp,
+    pub updated_at: Option<Timestamp>,
     pub active: bool,
 }
 
@@ -116,10 +127,12 @@ pub const CONFIG: Item<Config> = Item::new("config");
 // Stores
 pub const STORES: Map<StoreId, Store> = Map::new("stores");
 pub const STORE_AGG: Map<StoreId, StoreAgg> = Map::new("store_agg");
+pub const STORE_REGISTRATION_CODES: Map<String, bool> = Map::new("store_registration_codes");
 
 // Visits
 pub const VISITS: Map<VisitId, Visit> = Map::new("visits");
 pub const VISITS_BY_VISITOR: Map<(&Addr, VisitId), ()> = Map::new("visits_by_visitor");
+pub const VISITS_BY_STORE: Map<(StoreId, VisitId), ()> = Map::new("visits_by_store");
 
 // Reviews
 pub const REVIEWS: Map<ReviewId, Review> = Map::new("reviews");
@@ -138,6 +151,10 @@ pub const FEE_NATIVE: Map<String, Uint128> = Map::new("fee_native");
 
 // (store_id, qr_id) -> commit (Binary: 32 bytes)
 pub const QR_POOL: Map<(StoreId, QrId), Binary> = Map::new("qr_pool");
+
+// (store_id, sha256(code) hex) -> qr_id. This lets QR codes be consumed in any
+// order and gives true duplicate-use detection for the presented code.
+pub const QR_COMMIT_INDEX: Map<(StoreId, String), QrId> = Map::new("qr_commit_index");
 
 // store_id -> current cursor (next qr_id to consume)
 pub const QR_CURSOR: Map<StoreId, QrId> = Map::new("qr_cursor");

@@ -2,7 +2,7 @@ use cosmwasm_std::{Binary, Uint128};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::state::{RecordPolicy, ReviewId, StoreId, VisitId};
+use crate::state::{RecordPolicy, Review, ReviewId, Store, StoreId, Visit, VisitId};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InstantiateMsg {
@@ -24,7 +24,31 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     /* ================== Store ================== */
     RegisterStore {
+        auth_code: String,
         store_ref: String,
+        name: Option<String>,
+        category: Option<String>,
+        address: Option<String>,
+        phone: Option<String>,
+        website: Option<String>,
+        opening_hours: Option<String>,
+        price_range: Option<String>,
+        image_url: Option<String>,
+        description: Option<String>,
+        owner: Option<String>,
+    },
+    UpdateStore {
+        store_id: StoreId,
+        store_ref: Option<String>,
+        name: Option<String>,
+        category: Option<String>,
+        address: Option<String>,
+        phone: Option<String>,
+        website: Option<String>,
+        opening_hours: Option<String>,
+        price_range: Option<String>,
+        image_url: Option<String>,
+        description: Option<String>,
         owner: Option<String>,
     },
     SetStoreStatus {
@@ -34,6 +58,9 @@ pub enum ExecuteMsg {
     SetStoreReviewWindow {
         store_id: StoreId,
         secs: u64,
+    },
+    ProvisionStoreRegistrationCodes {
+        commits: Vec<Binary>,
     },
 
     /* ================== Visit (no-proof disabled) ================== */
@@ -112,9 +139,84 @@ pub enum ExecuteMsg {
 pub enum QueryMsg {
     Config {},
 
-    Store { store_id: StoreId },
-    StoreAgg { store_id: StoreId },
+    Store {
+        store_id: StoreId,
+    },
+    Stores {
+        start_after: Option<StoreId>,
+        limit: Option<u32>,
+    },
+    StoreAgg {
+        store_id: StoreId,
+    },
 
-    Visit { visit_id: VisitId },
-    Review { review_id: ReviewId },
+    Visit {
+        visit_id: VisitId,
+    },
+    VisitsByVisitor {
+        visitor: String,
+        start_after: Option<VisitId>,
+        limit: Option<u32>,
+    },
+    VisitsByStore {
+        store_id: StoreId,
+        start_after: Option<VisitId>,
+        limit: Option<u32>,
+    },
+    Review {
+        review_id: ReviewId,
+    },
+    ReviewsByStore {
+        store_id: StoreId,
+        start_after: Option<ReviewId>,
+        limit: Option<u32>,
+    },
+    ReviewsByReviewer {
+        reviewer: String,
+        start_after: Option<ReviewId>,
+        limit: Option<u32>,
+    },
+    TipsForReview {
+        review_id: ReviewId,
+    },
+    ReviewerBalance {
+        reviewer: String,
+        denom: String,
+    },
+    PlatformFees {
+        denom: String,
+    },
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct StoresResponse {
+    pub stores: Vec<Store>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct VisitsResponse {
+    pub visits: Vec<Visit>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ReviewsResponse {
+    pub reviews: Vec<Review>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct NativeTipTotal {
+    pub denom: String,
+    pub amount: Uint128,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct TipsForReviewResponse {
+    pub review_id: ReviewId,
+    pub totals: Vec<NativeTipTotal>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct NativeBalanceResponse {
+    pub denom: String,
+    pub amount: Uint128,
 }

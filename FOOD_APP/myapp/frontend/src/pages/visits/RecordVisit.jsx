@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../../api.js";
+import { executeWithKeplr } from "../../lib/walletExecute.js";
 
 const j = (v) => JSON.stringify(v, null, 2);
 const getLS = (k, d = null) => {
@@ -16,6 +17,20 @@ const setLS = (k, v) => {
     localStorage.setItem(k, JSON.stringify(v));
   } catch {}
 };
+const MEMO_OPTIONS = ["lunch", "dinner", "cafe", "takeout", "web-test visit"];
+const STORE_ID_KEYS = ["store_id", "storeId", "sid", "store"];
+const STORE_REF_KEYS = [
+  "node_id",
+  "nodeId",
+  "qr_node_id",
+  "qrNodeId",
+  "store_node_id",
+  "storeNodeId",
+  "store_ref",
+  "storeRef",
+  "ref",
+];
+const QR_CODE_KEYS = ["code", "qr_code", "qrCode", "qr", "token"];
 
 // TX logs から属性抽出（visit_id など）
 function findAttrInTx(txJson, key) {
@@ -40,8 +55,93 @@ function extractBalances(balResult) {
   return [];
 }
 
+function firstParam(params, keys) {
+  for (const key of keys) {
+    const value = params.get(key);
+    if (value) return value.trim();
+  }
+  return "";
+}
+
+function findStoreByRef(stores, ref) {
+  const needle = String(ref || "").trim().toLowerCase();
+  if (!needle) return null;
+  return (
+    stores.find(
+      (store) =>
+        String(store.node_id || "").trim().toLowerCase() === needle ||
+        String(store.nodeId || "").trim().toLowerCase() === needle ||
+        String(store.store_ref || "").trim().toLowerCase() === needle ||
+        String(store.name || "").trim().toLowerCase() === needle
+    ) || null
+  );
+}
+
+function findStoreById(stores, id) {
+  const numeric = Number(id);
+  if (!numeric || Number.isNaN(numeric)) return null;
+  return stores.find((store) => Number(store.id) === numeric) || null;
+}
+
+function parseQrPayload(rawValue, stores) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return { code: "", storeId: "", store: null, source: "" };
+
+  const resolveStore = ({ storeId = "", storeRef = "", source = "" }) => {
+    const byId = findStoreById(stores, storeId);
+    if (byId) return { storeId: String(byId.id), store: byId, source };
+    const byRef = findStoreByRef(stores, storeRef);
+    if (byRef) return { storeId: String(byRef.id), store: byRef, source };
+    return { storeId: storeId ? String(storeId) : "", store: null, source };
+  };
+
+  try {
+    const obj = JSON.parse(raw);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const storeId = STORE_ID_KEYS.map((key) => obj[key]).find(Boolean);
+      const storeRef = STORE_REF_KEYS.map((key) => obj[key]).find(Boolean);
+      const code = QR_CODE_KEYS.map((key) => obj[key]).find(Boolean);
+      const resolved = resolveStore({ storeId, storeRef, source: "QR内のJSON" });
+      return {
+        code: String(code || raw).trim(),
+        ...resolved,
+      };
+    }
+  } catch {}
+
+  try {
+    const url = new URL(raw);
+    const storeId = firstParam(url.searchParams, STORE_ID_KEYS);
+    const storeRef = firstParam(url.searchParams, STORE_REF_KEYS);
+    const code = firstParam(url.searchParams, QR_CODE_KEYS);
+    const resolved = resolveStore({ storeId, storeRef, source: "QR内のURL" });
+    return {
+      code: String(code || raw).trim(),
+      ...resolved,
+    };
+  } catch {}
+
+  const storeIdMatch = raw.match(/(?:store_id|storeId|sid|store)[:=]([0-9]+)/i);
+  const storeRefMatch = raw.match(
+    /(?:node_id|nodeId|qr_node_id|qrNodeId|store_node_id|storeNodeId|store_ref|storeRef|ref)[:=]([a-zA-Z0-9_.:-]+)/i
+  );
+  const codeMatch = raw.match(/(?:qr_code|qrCode|code|qr|token)[:=]([^|,\s]+)/i);
+  const resolved = resolveStore({
+    storeId: storeIdMatch?.[1] || "",
+    storeRef: storeRefMatch?.[1] || raw,
+    source: "QR内の文字列",
+  });
+  return {
+    code: String(codeMatch?.[1] || raw).trim(),
+    ...resolved,
+  };
+}
+
 export default function RecordVisit() {
   const nav = useNavigate();
+  const videoRef = useRef(null);
+  const streamRef = useRef(null);
+  const scanTimerRef = useRef(null);
 
   // ---- 設定 / 署名者（= 現在の KEYNAME） ----
   const [cfg, setCfg] = useState(null);
@@ -50,25 +150,17 @@ export default function RecordVisit() {
   const [signerBal, setSignerBal] = useState(null);
   const [signerInfoOut, setSignerInfoOut] = useState("");
 
-  // キー切替用（プルダウン）
-  const [keys, setKeys] = useState([]);
-  const [switchTo, setSwitchTo] = useState("");
-
   // ---- 店舗 ----
   const [stores, setStores] = useState([]);
-  const [storeFilter, setStoreFilter] = useState("");
-  const [storeId, setStoreId] = useState(getLS("ctx.storeId", ""));
+  const [storeId, setStoreId] = useState("");
 
   // ---- 入力 ----
-  const [visitor, setVisitor] = useState("");
-  const [visitedAt, setVisitedAt] = useState("");
+  const [qrCode, setQrCode] = useState("");
   const [memo, setMemo] = useState(getLS("ctx.lastVisitMemo", "dinner"));
   const [autoJump, setAutoJump] = useState(true);
-
-  // visitor を署名者に追従させるか（既定 ON）
-  const [followSigner, setFollowSigner] = useState(
-    getLS("ctx.followVisitorSigner", true)
-  );
+  const [scanning, setScanning] = useState(false);
+  const [scanStatus, setScanStatus] = useState("");
+  const [qrStoreStatus, setQrStoreStatus] = useState("");
 
   // ---- 出力 / 最近の visit ----
   const [outExec, setOutExec] = useState("");
@@ -82,13 +174,6 @@ export default function RecordVisit() {
       setCfg(c);
       setSignerName(c?.keyname || "");
       setSignerAddr(c?.myAddr || "");
-      // 追従 ON なら visitor も同期
-      setVisitor(
-        followSigner
-          ? c?.myAddr || ""
-          : getLS("ctx.lastVisitor", "") || c?.myAddr || ""
-      );
-
       // 残高
       if (c?.myAddr) {
         try {
@@ -105,28 +190,116 @@ export default function RecordVisit() {
         setStores(r?.json?.data?.stores ?? []);
       } catch {}
 
-      // キー一覧
-      try {
-        const r = await API.keysList();
-        const list = r?.keys || [];
-        setKeys(list);
-        const def =
-          c?.keyname && list.some((k) => k.name === c.keyname)
-            ? c.keyname
-            : list[0]?.name || "";
-        setSwitchTo(def);
-      } catch {}
-
       // 最近の来店（自分）
       if (c?.myAddr) reloadRecent(c.myAddr);
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return () => stopQrScanner(false);
   }, []);
 
-  // 署名者アドレスが変わったら、追従 ON のときだけ visitor を更新
   useEffect(() => {
-    if (followSigner) setVisitor(signerAddr || "");
-  }, [signerAddr, followSigner]);
+    if (!stores.length || !qrCode.trim()) return;
+    const parsed = parseQrPayload(qrCode, stores);
+    if (parsed.storeId && parsed.storeId !== String(storeId || "")) {
+      setStoreId(parsed.storeId);
+      setLS("ctx.storeId", parsed.storeId);
+      setQrStoreStatus(
+        parsed.store
+          ? `${parsed.source}から ${parsed.store.name || `Store #${parsed.store.id}`} を取得しました。`
+          : `${parsed.source}から store_id=${parsed.storeId} を取得しました。`
+      );
+    }
+  }, [stores]);
+
+  function stopQrScanner(updateState = true) {
+    if (scanTimerRef.current) {
+      clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (updateState) setScanning(false);
+  }
+
+  async function startQrScanner() {
+    setScanStatus("");
+    if (!("BarcodeDetector" in window)) {
+      setScanStatus("このブラウザはQR読み取りに未対応です。店舗に表示されたQRコードの文字列を手入力してください。");
+      return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setScanStatus("カメラを利用できません。QRコードの文字列を手入力してください。");
+      return;
+    }
+
+    try {
+      stopQrScanner();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setScanning(true);
+      setScanStatus("店舗に表示されている一意のQRコードをカメラに映してください。");
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+
+      const detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+      const scan = async () => {
+        try {
+          const video = videoRef.current;
+          if (!video || !streamRef.current) return;
+          const codes = await detector.detect(video);
+          const value = codes?.[0]?.rawValue || "";
+          if (value) {
+            handleQrValue(value, "camera");
+            stopQrScanner();
+            return;
+          }
+          scanTimerRef.current = setTimeout(scan, 700);
+        } catch (e) {
+          setScanStatus(`QR読み取りに失敗しました: ${String(e?.message || e)}`);
+          stopQrScanner();
+        }
+      };
+      scanTimerRef.current = setTimeout(scan, 500);
+    } catch (e) {
+      setScanStatus(`カメラを開始できませんでした: ${String(e?.message || e)}`);
+      stopQrScanner();
+    }
+  }
+
+  function handleQrValue(value, source = "manual") {
+    const parsed = parseQrPayload(value, stores);
+    setQrCode(parsed.code);
+
+    if (parsed.storeId) {
+      setStoreId(parsed.storeId);
+      setLS("ctx.storeId", parsed.storeId);
+      setQrStoreStatus(
+        parsed.store
+          ? `${parsed.source}から ${parsed.store.name || `Store #${parsed.store.id}`} を取得しました。`
+          : `${parsed.source}から store_id=${parsed.storeId} を取得しました。`
+      );
+      setScanStatus(
+        source === "camera"
+          ? "QRコードを読み取り、店舗情報も取得しました。このまま来店を記録できます。"
+          : "QRコードから店舗情報を取得しました。"
+      );
+    } else {
+      setQrStoreStatus("このQRコードから店舗情報は取得できませんでした。店舗を選択してください。");
+      setScanStatus(
+        source === "camera"
+          ? "QRコードを読み取りました。店舗情報が含まれていないため、店舗を選択してください。"
+          : ""
+      );
+    }
+  }
 
   async function reloadRecent(addr) {
     try {
@@ -139,17 +312,10 @@ export default function RecordVisit() {
     }
   }
 
-  // 店舗フィルタ
-  const filteredStores = useMemo(() => {
-    const q = (storeFilter || "").toLowerCase().trim();
-    if (!q) return stores;
-    return stores.filter(
-      (s) =>
-        String(s.id).includes(q) ||
-        (s.store_ref || "").toLowerCase().includes(q) ||
-        (s.owner || "").toLowerCase().includes(q)
-    );
-  }, [stores, storeFilter]);
+  const selectedStore = useMemo(
+    () => stores.find((s) => Number(s.id) === Number(storeId)) || null,
+    [stores, storeId]
+  );
 
   // 署名者の情報を読み直し
   async function refreshSignerInfo() {
@@ -164,50 +330,6 @@ export default function RecordVisit() {
     }
     setSignerInfoOut(j(c));
   }
-
-  // 署名者を mykey に切り替え
-  async function useMykey() {
-    try {
-      const info = await API.keyShow("mykey");
-      await API.setCurrent({ keyname: "mykey", myAddr: info?.address || "" });
-      await refreshSignerInfo();
-      if (followSigner) setVisitor(info?.address || "");
-      alert("署名者を mykey に切り替えました。");
-    } catch (e) {
-      alert("mykey への切替に失敗: " + String(e));
-    }
-  }
-
-  // プルダウンで選んだキーに切り替え
-  async function switchSigner() {
-    if (!switchTo) return;
-    try {
-      const info = await API.keyShow(switchTo);
-      await API.setCurrent({ keyname: switchTo, myAddr: info?.address || "" });
-      await refreshSignerInfo();
-      if (followSigner) setVisitor(info?.address || "");
-    } catch (e) {
-      alert("切替に失敗: " + String(e));
-    }
-  }
-
-  // visitor 手入力時：追従を自動解除し、上書きを記憶
-  function onVisitorChange(e) {
-    const v = e.target.value;
-    setVisitor(v);
-    if (followSigner && v !== signerAddr) {
-      setFollowSigner(false);
-      setLS("ctx.followVisitorSigner", false);
-    }
-    setLS("ctx.lastVisitor", v || "");
-  }
-
-  // 便利: 署名者と visitor の一致状態（UI 表示用）
-  const senderEqualsVisitor = useMemo(() => {
-    const a = (signerAddr || "").trim();
-    const b = (visitor || "").trim();
-    return !!a && !!b && a === b;
-  }, [signerAddr, visitor]);
 
   // 実行
   async function exec() {
@@ -230,33 +352,22 @@ export default function RecordVisit() {
       return;
     }
 
-    const trimmedVisitor = (visitor || "").trim();
-    const trimmedSigner = (signerAddr || "").trim();
-
-    // visitor フィールド生成:
-    //   - 空 / 署名者と同じ → null（自分の来店を自分で記録）
-    //   - 異なる → そのまま送信（admin / store owner の代理記録向け）
-    let visitorField = null;
-    if (!trimmedVisitor || trimmedVisitor === trimmedSigner) {
-      visitorField = null;
-      if (followSigner && trimmedVisitor !== trimmedSigner) {
-        setVisitor(trimmedSigner);
-      }
-    } else {
-      visitorField = trimmedVisitor;
+    const code = qrCode.trim();
+    if (!code) {
+      setOutExec(j({ error: "QR code を入力してください" }));
+      return;
     }
 
     const msg = {
-      record_visit: {
+      record_visit_by_qr: {
         store_id: sid,
-        visitor: visitorField,
-        visited_at: visitedAt.trim() ? visitedAt.trim() : null,
+        code,
         memo: memo || null,
       },
     };
 
     try {
-      const r = await API.execute({ msg });
+      const r = await executeWithKeplr({ msg });
       setOutExec(j(r));
 
       const txh = r?.txhash || r?.json?.txhash || r?.tx_response?.txhash;
@@ -281,10 +392,15 @@ export default function RecordVisit() {
         /NotFound desc.*account/i.test(msg)
       ) {
         hint =
-          "署名者（現在の KEYNAME）のアカウントが未作成/未資金です。設定で mykey に戻すか、そのアドレスへ少額 INJ を送金してください。";
+          "Keplrで接続中のウォレットが未作成/未資金です。そのアドレスへ少額 INJ を送金してください。";
+      } else if (/qr not provisioned/i.test(msg)) {
+        hint =
+          "この QR code の commit が未登録です。店舗オーナーまたは admin が sha256(code) を provision_qr_commits で事前登録してください。";
+      } else if (/qr already used/i.test(msg)) {
+        hint = "この QR code はすでに使用済みです。別の QR code を利用してください。";
       } else if (/forbidden/i.test(msg) || /unauthorized/i.test(msg)) {
         hint =
-          "visitor を署名者と異なるアドレスにして来店を記録できるのは admin / 店舗オーナーのみです。通常は visitor を空にするか、署名者と同じままご利用ください。";
+          "署名者や店舗の状態を確認してください。QR 来店記録では visitor は送信者になります。";
       }
 
       setOutExec(j({ error: msg, hint }));
@@ -292,27 +408,172 @@ export default function RecordVisit() {
   }
 
   return (
-    <div className="page">
-      <h2>来店記録（record_visit）</h2>
+    <div className="page visit-record-page">
+      <section className="visit-flow-hero">
+        <p className="eyebrow">Visit check-in</p>
+        <h2>店舗のQRコードで来店記録</h2>
+        <p className="muted">
+          QRコードに含まれる node id を読み取り、来店店舗を自動で取得します。
+        </p>
+      </section>
 
-      {/* 署名者（送信元）セクション */}
-      <div className="card">
-        <h3>現在の署名者（送信元）</h3>
-        <div className="row">
-          <div style={{ flex: 1 }}>
-            <label>KEYNAME</label>
-            <input value={signerName} readOnly />
+      <div className="visit-stepper">
+        <div className={`visit-step ${qrCode ? "done" : "pending"}`}>
+          <span>1</span>
+          <strong>QRを読み取る</strong>
+        </div>
+        <div className={`visit-step ${qrCode && storeId ? "done" : "pending"}`}>
+          <span>2</span>
+          <strong>来店を記録</strong>
+        </div>
+      </div>
+
+      <div className="visit-record-layout">
+        <section className="card visit-main-card">
+          <div className="visit-card-header">
+            <div>
+              <p className="eyebrow">Step 1</p>
+              <h3>QRコード</h3>
+            </div>
+            {qrCode ? (
+              <span className="visit-status-pill">対応済み</span>
+            ) : (
+              <span className="visit-status-pill muted-pill">未対応中</span>
+            )}
           </div>
-          <div style={{ flex: 2 }}>
-            <label>ADDRESS</label>
+
+          <div className="qr-scan-panel">
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              className="qr-scan-video"
+              style={{ display: scanning ? "block" : "none" }}
+            />
+            <button
+              className="btn"
+              type="button"
+              disabled={scanning}
+              onClick={startQrScanner}
+            >
+              カメラでQRを読み取る
+            </button>
+            {scanning ? (
+              <button
+                className="btn secondary"
+                type="button"
+                onClick={stopQrScanner}
+              >
+                読み取り停止
+              </button>
+            ) : null}
+            {scanStatus ? <p className="muted">{scanStatus}</p> : null}
+          </div>
+
+          <details className="visit-details">
+            <summary>カメラが使えない場合は手入力</summary>
+            <label>QRコード</label>
             <input
-              value={signerAddr}
-              readOnly
+              value={qrCode}
+              onChange={(e) => handleQrValue(e.target.value, "manual")}
+              placeholder='例: {"node_id":"store-ref-001","code":"QR-..."}'
               style={{ fontFamily: "monospace" }}
             />
+          </details>
+
+          <div className="visit-store-confirm">
+            <div className="visit-card-header">
+              <div>
+                <p className="eyebrow">Detected store</p>
+                <h3>読み取った店舗</h3>
+              </div>
+              {selectedStore ? (
+                <span className="visit-status-pill">対応済み</span>
+              ) : (
+                <span className="visit-status-pill muted-pill">未対応中</span>
+              )}
+            </div>
+
+            {selectedStore ? (
+              <div className="visit-selected-store">
+                <strong>{selectedStore.name || `Store #${selectedStore.id}`}</strong>
+                <span>{selectedStore.category || "カテゴリ未設定"}</span>
+                <span>{selectedStore.address || "住所未設定"}</span>
+              </div>
+            ) : (
+              <p className="input-guide">
+                QRコードに含まれる node id から店舗を取得します。
+              </p>
+            )}
+            {qrStoreStatus ? <p className="input-guide">{qrStoreStatus}</p> : null}
           </div>
-          <div style={{ flex: 2 }}>
-            <label>残高（bank/balances）</label>
+        </section>
+
+        <section className="card visit-main-card">
+          <div className="visit-card-header">
+            <div>
+              <p className="eyebrow">Step 2</p>
+              <h3>記録する</h3>
+            </div>
+          </div>
+
+          <label>来店シーン</label>
+          <select value={memo} onChange={(e) => setMemo(e.target.value)}>
+            {MEMO_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+
+          <label>記録後</label>
+          <select
+            value={autoJump ? "true" : "false"}
+            onChange={(e) => setAutoJump(e.target.value === "true")}
+          >
+            <option value="true">レビュー作成ページへ移動</option>
+            <option value="false">このページに残る</option>
+          </select>
+
+          <button
+            className="btn ok visit-submit"
+            onClick={exec}
+            disabled={!storeId || !qrCode.trim()}
+          >
+            来店を記録する
+          </button>
+
+          {!storeId || !qrCode.trim() ? (
+            <p className="input-guide">QR読み取りと店舗取得が完了すると送信できます。</p>
+          ) : null}
+
+          {outExec ? (
+            <div className="visit-result">
+              <strong>{outExec.includes("\"error\"") ? "記録できませんでした" : "送信しました"}</strong>
+              <pre className="out">{outExec}</pre>
+            </div>
+          ) : null}
+
+          {outTx ? (
+            <details className="visit-details">
+              <summary>Tx詳細を表示</summary>
+              <pre className="out">{outTx}</pre>
+            </details>
+          ) : null}
+        </section>
+      </div>
+
+      <details className="card visit-advanced">
+        <summary>詳細設定と履歴</summary>
+
+        <div className="visit-advanced-grid">
+          <div>
+            <h3>接続設定</h3>
+            <label>KEYNAME（keyless公開では未使用）</label>
+            <input value={signerName} readOnly />
+            <label>既定ADDRESS（keyless公開ではKeplrを使用）</label>
+            <input value={signerAddr} readOnly style={{ fontFamily: "monospace" }} />
+            <label>残高</label>
             <input
               readOnly
               value={
@@ -327,285 +588,50 @@ export default function RecordVisit() {
                     })()
               }
             />
+            <div className="toolbar">
+              <button className="btn" onClick={refreshSignerInfo}>
+                再読込
+              </button>
+              <button className="btn secondary" onClick={() => nav("/settings")}>
+                設定
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <h3>最近の来店</h3>
+            <button className="btn secondary" onClick={() => reloadRecent(signerAddr)}>
+              履歴を再読込
+            </button>
+            <div className="visit-history-list">
+              {recent.map((v) => (
+                <div className="visit-history-item" key={v.id}>
+                  <div>
+                    <strong>Visit #{v.id}</strong>
+                    <span>Store #{v.store_id} / {v.memo || "memoなし"}</span>
+                  </div>
+                  <button
+                    className="btn"
+                    onClick={() => {
+                      setLS("ctx.visitId", v.id);
+                      nav("/reviews/create");
+                    }}
+                  >
+                    レビュー作成
+                  </button>
+                </div>
+              ))}
+              {recent.length === 0 ? <p className="muted">来店履歴がありません。</p> : null}
+            </div>
           </div>
         </div>
 
-        {/* 残高レスポンスの生 JSON（デバッグ用） */}
-        <details style={{ marginTop: 4 }}>
-          <summary>残高レスポンス（debug）</summary>
+        <details className="visit-details">
+          <summary>デバッグ情報</summary>
+          <pre className="out">{signerInfoOut || j(cfg || {})}</pre>
           <pre className="out">{j(signerBal || {})}</pre>
         </details>
-
-        <div className="row" style={{ marginTop: 8, gap: 8 }}>
-          <button className="btn" onClick={refreshSignerInfo}>
-            情報を再読込
-          </button>
-          <button className="btn secondary" onClick={() => nav("/settings")}>
-            設定を開く
-          </button>
-          <button className="btn warn" onClick={useMykey}>
-            署名者を mykey に切替
-          </button>
-
-          {/* キー切替プルダウン（幅を短く固定） */}
-          <select
-            className="key-select"
-            style={{ width: 240, maxWidth: 240 }}
-            value={switchTo}
-            onChange={(e) => setSwitchTo(e.target.value)}
-            title="切り替えたいキーを選択"
-          >
-            {keys.map((k) => (
-              <option
-                key={k.name}
-                value={k.name}
-                title={`${k.name} — ${k.address}`}
-              >
-                {`${k.name} — ${String(k.address || "").slice(0, 10)}...`}
-              </option>
-            ))}
-          </select>
-          <button className="btn" onClick={switchSigner}>
-            選択キーに切替
-          </button>
-        </div>
-
-        {/* 署名者 ≠ visitor の可視化 */}
-        {!senderEqualsVisitor && (
-          <div className="muted" style={{ marginTop: 6 }}>
-            <b>注意:</b>{" "}
-            現在、visitor と署名者アドレスが異なっています。
-            admin / 店舗オーナー以外がこの状態で送信すると、コントラクトから
-            Forbidden になる可能性があります。
-          </div>
-        )}
-
-        <div className="row" style={{ marginTop: 6 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={followSigner}
-              onChange={(e) => {
-                const v = e.target.checked;
-                setFollowSigner(v);
-                setLS("ctx.followVisitorSigner", v);
-                if (v) setVisitor(signerAddr || "");
-              }}
-            />
-            visitor を署名者（上の ADDRESS）と同じにする
-          </label>
-          <button
-            className="btn secondary"
-            onClick={() => {
-              setVisitor(signerAddr || "");
-              setFollowSigner(true);
-              setLS("ctx.followVisitorSigner", true);
-            }}
-          >
-            visitor を署名者に合わせる
-          </button>
-        </div>
-
-        <details style={{ marginTop: 8 }}>
-          <summary>CFG（デバッグ）</summary>
-          <pre className="out">{signerInfoOut || j(cfg || {})}</pre>
-        </details>
-      </div>
-
-      <div className="grid" style={{ marginTop: 12 }}>
-        {/* 店舗選択 */}
-        <div className="card">
-          <h3>店舗選択</h3>
-          <div className="row">
-            <div style={{ flex: 1 }}>
-              <label>store_id（手入力 or 下の一覧から）</label>
-              <input
-                value={storeId}
-                onChange={(e) => {
-                  setStoreId(e.target.value);
-                  setLS("ctx.storeId", e.target.value || null);
-                }}
-                placeholder="例: 3"
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label>検索</label>
-              <input
-                value={storeFilter}
-                onChange={(e) => setStoreFilter(e.target.value)}
-                placeholder="id / store_ref / owner"
-              />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 8, maxHeight: 260, overflow: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>id</th>
-                  <th>store_ref</th>
-                  <th>owner</th>
-                  <th>active</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStores.map((s) => (
-                  <tr key={s.id}>
-                    <td>{s.id}</td>
-                    <td>{s.store_ref}</td>
-                    <td style={{ fontFamily: "monospace" }}>
-                      {s.owner || <span className="muted">null</span>}
-                    </td>
-                    <td>{s.active ? "true" : "false"}</td>
-                    <td>
-                      <button
-                        className="btn secondary"
-                        onClick={() => {
-                          setStoreId(String(s.id));
-                          setLS("ctx.storeId", s.id);
-                        }}
-                      >
-                        選択
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filteredStores.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="muted">
-                      （店舗がありません）
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* 送信フォーム */}
-        <div className="card">
-          <h3>来店記録を作成</h3>
-
-          <label>store_id</label>
-          <input
-            value={storeId}
-            onChange={(e) => setStoreId(e.target.value)}
-            placeholder="id"
-          />
-
-          <label>visitor</label>
-          <input
-            value={visitor}
-            onChange={onVisitorChange}
-            placeholder="空 = 自分（署名者） / inj1..."
-            style={{ fontFamily: "monospace" }}
-          />
-
-          <label>visited_at（空=ブロック時刻）</label>
-          <input
-            value={visitedAt}
-            onChange={(e) => setVisitedAt(e.target.value)}
-            placeholder="空で null"
-          />
-
-          <label>memo</label>
-          <input
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="例: dinner"
-          />
-
-          <div className="row" style={{ marginTop: 8 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={autoJump}
-                onChange={(e) => setAutoJump(e.target.checked)}
-              />
-              作成後にレビュー作成ページへ移動
-            </label>
-          </div>
-
-          <div className="row" style={{ marginTop: 8 }}>
-            <button className="btn ok" onClick={exec}>
-              record_visit を送信
-            </button>
-            <button
-              className="btn secondary"
-              onClick={() => nav("/reviews/create")}
-            >
-              レビュー作成へ
-            </button>
-          </div>
-
-          <h4 style={{ marginTop: 10 }}>結果（execute）</h4>
-          <pre className="out">{outExec}</pre>
-
-          <h4 style={{ marginTop: 10 }}>結果（tx）</h4>
-          <pre className="out">{outTx}</pre>
-        </div>
-      </div>
-
-      {/* 最近の来店（自分） */}
-      <div className="card" style={{ marginTop: 12 }}>
-        <h3>最近の来店（自分）</h3>
-        <div className="row" style={{ marginBottom: 8 }}>
-          <button className="btn" onClick={() => reloadRecent(signerAddr)}>
-            再読込
-          </button>
-        </div>
-        <div style={{ overflow: "auto" }}>
-          <table>
-            <thead>
-              <tr>
-                <th>id</th>
-                <th>store_id</th>
-                <th>memo</th>
-                <th>visited_at</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recent.map((v) => (
-                <tr key={v.id}>
-                  <td>{v.id}</td>
-                  <td>{v.store_id}</td>
-                  <td>{v.memo || ""}</td>
-                  <td>{v.visited_at || ""}</td>
-                  <td className="row" style={{ gap: 8 }}>
-                    <button
-                      className="btn secondary"
-                      onClick={() => {
-                        setLS("ctx.visitId", v.id);
-                        alert(`VISIT_ID=${v.id} を保存しました`);
-                      }}
-                    >
-                      この id を保存
-                    </button>
-                    <button
-                      className="btn"
-                      onClick={() => {
-                        setLS("ctx.visitId", v.id);
-                        nav("/reviews/create");
-                      }}
-                    >
-                      この id でレビュー作成へ
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {recent.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="muted">
-                    （来店履歴がありません）
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      </details>
     </div>
   );
 }

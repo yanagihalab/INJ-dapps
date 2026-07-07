@@ -6,8 +6,9 @@ export default function Settings() {
   const [form, setForm] = useState({
     keyname: "", myAddr: "", codeId: "", contract: "",
     injNode: "", chainId: "", injectiveHomeHostPath: "",
-    gasAdjustment: "", defaultFees: ""
+    gasAdjustment: "", defaultFees: "", wasmHostPath: ""
   });
+  const [keys, setKeys] = useState([]);
   const [out, setOut] = useState("");
 
   useEffect(() => {
@@ -17,8 +18,10 @@ export default function Settings() {
       setForm({
         keyname: c.keyname ?? "", myAddr: c.myAddr ?? "", codeId: c.codeId ?? "", contract: c.contract ?? "",
         injNode: c.injNode ?? "", chainId: c.chainId ?? "", injectiveHomeHostPath: c.injectiveHomeHostPath ?? "",
-        gasAdjustment: c.gasAdjustment ?? "", defaultFees: c.defaultFees ?? ""
+        gasAdjustment: c.gasAdjustment ?? "", defaultFees: c.defaultFees ?? "", wasmHostPath: c.wasmHostPath ?? ""
       });
+      const ks = await API.keysList().catch(() => null);
+      setKeys(ks?.keys || []);
     })();
   }, []);
 
@@ -29,12 +32,37 @@ export default function Settings() {
 
   return (
     <div className="page">
-      <h2>設定</h2>
+      <h2>サービス接続設定</h2>
 
-      {["keyname","myAddr","codeId","contract","injNode","chainId","injectiveHomeHostPath","gasAdjustment","defaultFees"].map(k => (
+      {["keyname","myAddr","codeId","contract","injNode","chainId","injectiveHomeHostPath","gasAdjustment","defaultFees","wasmHostPath"].map(k => (
         <div className="row" key={k} style={{flexDirection:"column", alignItems:"stretch"}}>
           <label>{k}</label>
-          <input value={form[k]} onChange={(e)=>setForm(s=>({ ...s, [k]: e.target.value }))} />
+          {k === "keyname" ? (
+            <select value={form[k]} onChange={(e)=>setForm(s=>({ ...s, [k]: e.target.value }))}>
+              <option value="">未選択</option>
+              {keys.map((key) => <option key={key.name} value={key.name}>{key.name}</option>)}
+            </select>
+          ) : k === "chainId" ? (
+            <select value={form[k]} onChange={(e)=>setForm(s=>({ ...s, [k]: e.target.value }))}>
+              <option value="injective-888">injective-888</option>
+            </select>
+          ) : k === "gasAdjustment" ? (
+            <select value={form[k]} onChange={(e)=>setForm(s=>({ ...s, [k]: e.target.value }))}>
+              <option value="1.2">1.2</option>
+              <option value="1.4">1.4</option>
+              <option value="1.6">1.6</option>
+              <option value="2.0">2.0</option>
+            </select>
+          ) : k === "defaultFees" ? (
+            <select value={form[k]} onChange={(e)=>setForm(s=>({ ...s, [k]: e.target.value }))}>
+              <option value="1000000000000000inj">0.001 INJ</option>
+              <option value="2000000000000000inj">0.002 INJ</option>
+              <option value="5000000000000000inj">0.005 INJ</option>
+              <option value="10000000000000000inj">0.01 INJ</option>
+            </select>
+          ) : (
+            <input value={form[k]} onChange={(e)=>setForm(s=>({ ...s, [k]: e.target.value }))} />
+          )}
         </div>
       ))}
 
@@ -42,7 +70,7 @@ export default function Settings() {
         <button className="btn" onClick={save}>保存</button>
       </div>
 
-      <h3>現在値</h3>
+      <h3>現在の接続先</h3>
       <pre className="out">{JSON.stringify(cfg ?? {}, null, 2)}</pre>
 
       <h3>保存結果</h3>

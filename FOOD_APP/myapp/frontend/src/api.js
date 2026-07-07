@@ -1,8 +1,11 @@
 // frontend/src/api.js
 // Unified wrapper to backend /api (Vite proxy 前提)
 
+export const API_BASE = `${import.meta.env.BASE_URL.replace(/\/$/, "")}/api`;
+export const apiPath = (path = "") => `${API_BASE}${path}`;
+
 async function _request(path, init = {}) {
-  const r = await fetch(`/api${path}`, {
+  const r = await fetch(apiPath(path), {
     headers: { "Content-Type": "application/json", ...(init.headers || {}) },
     ...init,
   });
@@ -14,24 +17,53 @@ async function _request(path, init = {}) {
 }
 
 // shorthand
-const GET  = (p) => _request(p, { method: "GET" });
+const GET = (p) => _request(p, { method: "GET" });
 const POST = (p, body = {}) => _request(p, { method: "POST", body: JSON.stringify(body) });
+
+function normalizeExecuteArgs(input = {}, opts = {}) {
+  if (input && typeof input === "object" && Object.prototype.hasOwnProperty.call(input, "msg")) {
+    return { ...input, ...opts };
+  }
+  return { msg: input, ...opts };
+}
+
+function normalizeIdentity(input = {}) {
+  if (typeof input === "string") return { address: input };
+  return input || {};
+}
+
+function identityQuery(input = {}) {
+  const { address, name } = normalizeIdentity(input);
+  const qs = new URLSearchParams();
+  if (address) qs.set("address", address);
+  else if (name) qs.set("name", name);
+  return qs.toString();
+}
 
 export const API = {
   // ---- health / config ------------------------------------------------------
-  health:     () => GET("/health"),
-  getConfig:  () => GET("/config"),
-  config:     () => GET("/config"),           // 互換
+  health: () => GET("/health"),
+  getConfig: () => GET("/config"),
+  config: () => GET("/config"), // 互換
   saveConfig: (cfg) => POST("/config", cfg),
+  saveStoreRegistrationMetadata: (entries = []) =>
+    POST("/store-registration/metadata", { entries }),
+  resolveStoreRegistration: (authCode) =>
+    POST("/store-registration/resolve", { auth_code: authCode }),
 
   // ---- tx / smart / tx query ------------------------------------------------
-  execute: ({ msg, amount, fees, contract } = {}) =>
-    POST("/tx/execute", { msg, amount, fees, contract }),
+  execute: (input = {}, opts = {}) => {
+    const { msg, amount, fees, contract, from } = normalizeExecuteArgs(input, opts);
+    return POST("/tx/execute", { msg, amount, fees, contract, from });
+  },
 
   smart: (msg, contract) =>
     POST("/query/smart", contract ? { msg, contract } : { msg }),
 
   tx: (hash) => GET(`/query/tx?hash=${encodeURIComponent(hash || "")}`),
+  storeCode: (body = {}) => POST("/tx/store-code", body),
+  instantiate: (body = {}) => POST("/tx/instantiate", body),
+  deploy: (body = {}) => POST("/tx/deploy", body),
 
   // ---- bank/balances --------------------------------------------------------
   /** bank/balances を返す（バックエンドの /api/balance を叩く） */
@@ -66,25 +98,29 @@ export const API = {
       ...(contract ? { contract } : {}),
     }),
 
-  visitsByVisitor: (addr, limit = 50) =>
-    GET(`/steps/visits_by_visitor?visitor=${encodeURIComponent(addr || "")}&limit=${Number(limit)}`),
+  visitsByVisitor: (addr, limit = 50, contract) =>
+    POST("/query/smart", {
+      msg: {
+        visits_by_visitor: {
+          visitor: addr || "",
+          start_after: null,
+          limit: Number(limit) || 50,
+        },
+      },
+      ...(contract ? { contract } : {}),
+    }),
 
   // ---- keys (local keyring helpers) ----------------------------------------
   keysList: () => GET("/keys/list"),
-  keyShow:  (name) => GET(`/keys/show?name=${encodeURIComponent(name || "")}`),
-  keysAdd:  ({ name, overwrite = false, setCurrent = false }) =>
+  keyShow: (name) => GET(`/keys/show?name=${encodeURIComponent(name || "")}`),
+  keysAdd: ({ name, overwrite = false, setCurrent = false }) =>
     POST("/keys/add", { name, overwrite, setCurrent }),
   setCurrent: ({ keyname, myAddr }) =>
     POST("/config", { keyname, myAddr }),
 
   // ---- accounts (app password; /api/accounts/*) ----------------------------
   // name / address のどちらでも指定可（address 優先）
-  authStatus: ({ address, name } = {}) => {
-    const qs = new URLSearchParams();
-    if (address) qs.set("address", address);
-    else if (name) qs.set("name", name);
-    return GET(`/accounts/password_status?${qs.toString()}`);
-  },
+  authStatus: (input = {}) => GET(`/accounts/password_status?${identityQuery(input)}`),
   authSetPassword: ({ address, name, password, hint } = {}) =>
     POST("/accounts/set_password", { address, name, password, hint }),
   authVerifyPassword: ({ address, name, password } = {}) =>
@@ -92,12 +128,7 @@ export const API = {
 
   // ---- 旧名互換 -------------------------------------------------------------
   accounts: {
-    passwordStatus: ({ address, name } = {}) => {
-      const qs = new URLSearchParams();
-      if (address) qs.set("address", address);
-      else if (name) qs.set("name", name);
-      return GET(`/accounts/password_status?${qs.toString()}`);
-    },
+    passwordStatus: (input = {}) => GET(`/accounts/password_status?${identityQuery(input)}`),
     setPassword: ({ address, name, password, hint } = {}) =>
       POST("/accounts/set_password", { address, name, password, hint }),
     verifyPassword: ({ address, name, password } = {}) =>

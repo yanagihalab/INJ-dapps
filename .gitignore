@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+target/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Logs and caches
+*.log
+*.bak
+*.pyc
+__pycache__/
+.DS_Store
+.vite/
+coverage/
+
+# Local app data
+data/
+auth_store.json
+tx_out.json
+tx_err.log
