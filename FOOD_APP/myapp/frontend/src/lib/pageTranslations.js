@@ -1,0 +1,443 @@
+import { useEffect } from "react";
+import { useTranslation } from "react-i18next";
+
+const EN = {
+  "探す": "Search",
+  "店舗一覧": "Stores",
+  "来店QR": "Visit QR",
+  "レビュー投稿": "Write Review",
+  "口コミ": "Reviews",
+  "店舗登録": "Register Store",
+  "QRで来店": "Visit by QR",
+  "日本語": "Japanese",
+  "信頼できる来店レビューで、次のお店を見つける。": "Find your next place through trusted visit-verified reviews.",
+  "認証コードで登録された店舗、QR来店記録、口コミ、レビュー応援をひとつの流れで扱います。": "Manage store registration, QR visit records, reviews, and review tips in one flow.",
+  "店名・ジャンル・エリアで検索": "Search by store, genre, or area",
+  "すべてのジャンル": "All genres",
+  "一覧へ": "View all",
+  "読み込みエラー": "Loading error",
+  "注目の店舗": "Featured stores",
+  "店舗を登録": "Register a store",
+  "店舗情報を読み込んでいます。": "Loading store information.",
+  "まだ店舗がありません。": "No stores yet.",
+  "発行済みの認証コードで店舗登録から最初の店舗を追加してください。": "Use an issued authorization code to add the first store.",
+  "店舗プロフィール登録": "Store profile registration",
+  "QRで来店記録": "Record visits by QR",
+  "レビュー閲覧・管理": "Browse and manage reviews",
+  "受付中": "Open",
+  "停止中": "Paused",
+  "ジャンル未設定": "Genre not set",
+  "価格帯未設定": "Price not set",
+  "レビュー待ち": "Waiting for reviews",
+  "住所未設定": "Address not set",
+  "営業時間未設定": "Hours not set",
+  "来店記録": "Record visit",
+  "レビューを見る": "View reviews",
+  "サービス接続設定": "Service connection settings",
+  "admin API token（このタブのセッションのみ）": "Admin API token (this tab session only)",
+  "サーバーの ADMIN_API_TOKEN": "Server ADMIN_API_TOKEN",
+  "未選択": "Not selected",
+  "保存": "Save",
+  "現在の接続先": "Current connection",
+  "保存結果": "Save result",
+  "店舗のQRコードで来店記録": "Record a visit with the store QR code",
+  "QRコードに含まれる node id を読み取り、来店店舗を自動で取得します。": "Read the node id in the QR code and automatically retrieve the store.",
+  "QRを読み取る": "Scan QR",
+  "来店を記録": "Record visit",
+  "QRコード": "QR code",
+  "対応済み": "Ready",
+  "未対応中": "Not ready",
+  "カメラでQRを読み取る": "Scan QR with camera",
+  "読み取り停止": "Stop scanning",
+  "カメラが使えない場合は手入力": "Enter manually if the camera is unavailable",
+  "読み取った店舗": "Scanned store",
+  "カテゴリ未設定": "Category not set",
+  "QRコードに含まれる node id から店舗を取得します。": "The store will be retrieved from the node id in the QR code.",
+  "記録する": "Submit record",
+  "来店シーン": "Visit scene",
+  "記録後": "After recording",
+  "レビュー作成ページへ移動": "Go to review creation page",
+  "このページに残る": "Stay on this page",
+  "来店を記録する": "Record this visit",
+  "QR読み取りと店舗取得が完了すると送信できます。": "You can submit after QR scanning and store lookup are complete.",
+  "記録できませんでした": "Could not record",
+  "送信しました": "Submitted",
+  "Tx詳細を表示": "Show transaction details",
+  "詳細設定と履歴": "Advanced settings and history",
+  "接続設定": "Connection settings",
+  "KEYNAME（keyless公開では未使用）": "KEYNAME (unused in keyless public mode)",
+  "既定ADDRESS（keyless公開ではKeplrを使用）": "Default ADDRESS (Keplr is used in keyless public mode)",
+  "残高": "Balance",
+  "再読込": "Reload",
+  "設定": "Settings",
+  "最近の来店": "Recent visits",
+  "履歴を再読込": "Reload history",
+  "レビュー作成": "Create review",
+  "来店履歴がありません。": "No visit history.",
+  "デバッグ情報": "Debug information",
+  "来店履歴": "Visit history",
+  "エラー": "Error",
+  "検索方法": "Search method",
+  "訪問者別": "By visitor",
+  "店舗別": "By store",
+  "店舗": "Store",
+  "店舗を選択": "Select store",
+  "訪問者": "Visitor",
+  "visitor を選択": "Select visitor",
+  "先頭から": "From beginning",
+  "読み込み": "Load",
+  "次のページ": "Next page",
+  "候補を再読込": "Reload options",
+  "操作": "Actions",
+  "データなし": "No data",
+  "生データ": "Raw data",
+  "店舗レビュー運営管理": "Store Review Admin",
+  "店舗登録コード、来店QR、口コミルールを管理します。重要な操作は Keplr で署名します。": "Manage store registration codes, visit QR, and review rules. Important actions are signed with Keplr.",
+  "未設定": "Not set",
+  "ログイン後に表示": "Shown after login",
+  "管理者としてログイン済み": "Logged in as admin",
+  "このウォレットは管理者ではありません": "This wallet is not an admin",
+  "Keplrで管理者確認": "Verify admin with Keplr",
+  "このKeplrウォレットで運営管理操作を実行できます。": "You can run admin operations with this Keplr wallet.",
+  "Keplrの接続先ウォレットを contract admin に切り替えてください。": "Switch Keplr to the contract admin wallet.",
+  "Keplrを接続すると、現在のウォレットと contract admin を照合します。": "Connect Keplr to compare the current wallet with the contract admin.",
+  "設定変更": "Settings",
+  "店舗編集": "Store editing",
+  "登録コード": "Registration codes",
+  "口コミ管理": "Review management",
+  "来店管理": "Visit management",
+  "実行結果": "Result",
+  "Keplr Admin 認証": "Keplr Admin Authentication",
+  "Admin API token": "Admin API token",
+  "このブラウザセッションのみ保存します。公開サーバーには重要keyを置かず、admin書き込みAPIの認可に使います。": "Saved only for this browser session. It authorizes admin write APIs without placing sensitive keys on the public server.",
+  "認証トークンを保存": "Save auth token",
+  "トークンをクリア": "Clear token",
+  "ウォレット接続": "Wallet connection",
+  "接続ウォレット": "Connected wallet",
+  "Contract admin": "Contract admin",
+  "Admin判定": "Admin status",
+  "Keplrを接続": "Connect Keplr",
+  "管理画面を表示": "Show admin page",
+  "管理者ログイン": "Admin login",
+  "このページは管理者ウォレットでログイン後に表示されます。": "This page is shown after logging in with the admin wallet.",
+  "admin pageは通常ページにリンク表示されません。URL直打ち後、Keplrで管理者確認してください。": "The admin page is not linked from normal pages. Open the URL directly and verify with Keplr.",
+  "現在の設定値": "Current settings",
+  "変更後の設定値": "New settings",
+  "変更あり": "Changed",
+  "変更なし": "No change",
+  "保存して反映": "Save and apply",
+  "最新口コミを読み込み、対象レビューを選択して編集または非表示にできます。": "Load recent reviews, select one, then edit or hide it.",
+  "最新口コミを読み込む": "Load recent reviews",
+  "タイトルなし": "No title",
+  "口コミを更新": "Update review",
+  "口コミを非表示": "Hide review",
+  "口コミ一覧ページを開く": "Open review list",
+  "店舗ごとの来店履歴を取得し、visitorで絞り込み、必要に応じて来店を取消できます。": "Load visits by store, filter by visitor, and revoke visits when needed.",
+  "来店を読み込む": "Load visits",
+  "visitorで絞り込み": "Filter by visitor",
+  "すべてのvisitor": "All visitors",
+  "visit_id": "visit_id",
+  "来店を取消": "Revoke visit",
+  "来店履歴ページを開く": "Open visit history",
+  "来店QR記録を開く": "Open visit QR recording",
+  "来店QRコード登録": "Visit QR code registration",
+  "QR codes（1行に1 code / node id を含むコード）": "QR codes (one code per line / code including node id)",
+  "来店QRを登録": "Register visit QR",
+  "掲示用QRページを開く": "Open display QR page",
+  "登録コードを発行": "Issue registration code",
+  "店舗 node id / store_ref": "Store node id / store_ref",
+  "店名": "Store name",
+  "再生成": "Regenerate",
+  "店舗詳細": "Store details",
+  "来店QRを読み取る": "Scan visit QR",
+  "掲示QRを作成": "Create display QR",
+  "口コミを書く": "Write review",
+  "店舗基本情報": "Store information",
+  "住所": "Address",
+  "電話番号": "Phone",
+  "Webサイト": "Website",
+  "価格帯": "Price range",
+  "ステータス": "Status",
+  "営業情報": "Business hours",
+  "営業時間はまだ登録されていません。": "Business hours have not been registered yet.",
+  "来店QR用 node id": "Visit QR node id",
+  "店舗掲示用QRページを開く": "Open store display QR page",
+  "評価集計": "Rating summary",
+  "この店舗の口コミ": "Reviews for this store",
+  "まだ口コミがありません。": "No reviews yet.",
+  "来店記録後に最初の口コミを投稿できます。": "You can post the first review after recording a visit.",
+  "詳細データ": "Detailed data",
+  "店舗を探す": "Find stores",
+  "店名、ジャンル、住所、価格帯からオンチェーン登録済みの店舗を絞り込めます。": "Filter registered on-chain stores by name, genre, address, and price range.",
+  "店名・ジャンル・エリア・owner で検索": "Search by store, genre, area, or owner",
+  "すべての価格帯": "All price ranges",
+  "active のみ": "Active only",
+  "inactive のみ": "Inactive only",
+  "すべて": "All",
+  "件の店舗": "stores",
+  "掲示QR": "Display QR",
+  "QR読取": "Scan QR",
+  "条件に合う店舗がありません。": "No stores match your filters.",
+  "検索条件を変えるか、新しい店舗を登録してください。": "Change the filters or register a new store.",
+  "Store QR": "Store QR",
+  "店舗に掲示する来店記録用QRを作成します。QR code はadminで事前登録した値を入力してください。": "Create a visit-recording QR for display at the store. Enter a QR code value pre-registered by admin.",
+  "店舗詳細へ戻る": "Back to store details",
+  "掲示用QR": "Display QR",
+  "QRを生成しています。": "Generating QR.",
+  "PNGを保存": "Save PNG",
+  "読み取り画面を開く": "Open scanning page",
+  "code が空のQRは来店Txに使えません。掲示前にQR codeを入力してください。": "A QR without code cannot be used for visit transactions. Enter the QR code before displaying.",
+  "最新の口コミ": "Latest reviews",
+  "最新口コミ": "Latest reviews",
+  "デフォルトは最新10件を表示します。条件を入力すると検索結果に切り替わります。": "By default, the latest 10 reviews are shown. Enter filters to search.",
+  "店舗名": "Store name",
+  "ジャンル": "Genre",
+  "エリア": "Area",
+  "評価": "Rating",
+  "検索": "Search",
+  "検索をリセット": "Reset search",
+  "口コミ一覧": "Review list",
+  "レビュー": "Review",
+  "来店": "Visit",
+  "送信": "Submit",
+  "戻る": "Back",
+  "更新": "Update",
+  "削除": "Delete",
+  "非表示": "Hide",
+  "選択": "Select",
+  "コピー": "Copy",
+  "コピーしました": "Copied",
+  "確認": "Confirm",
+  "閉じる": "Close",
+  "寿司": "Sushi",
+  "ラーメン": "Ramen",
+  "焼肉": "Yakiniku",
+  "和食": "Japanese",
+  "イタリアン": "Italian",
+  "カフェ": "Cafe",
+  "居酒屋": "Izakaya",
+  "フレンチ": "French",
+  "中華": "Chinese",
+  "スイーツ": "Sweets",
+  "バー": "Bar",
+  "24時間営業": "Open 24 hours",
+  "不定休": "Irregular holidays",
+  "〜1,000円": "Up to 1,000 JPY",
+  "1,000-2,000円": "1,000-2,000 JPY",
+  "2,000-4,000円": "2,000-4,000 JPY",
+  "4,000-8,000円": "4,000-8,000 JPY",
+  "8,000-12,000円": "8,000-12,000 JPY",
+  "12,000-20,000円": "12,000-20,000 JPY",
+  "20,000円〜": "20,000+ JPY",
+  "最高": "Excellent",
+  "とても美味しかった": "It was very delicious",
+  "認証コード": "Authorization code",
+  "admin から発行されたコード": "Code issued by admin",
+  "認証コード入力後に表示": "Shown after entering the authorization code",
+  "カテゴリ / ジャンル": "Category / Genre",
+  "その他（手入力）": "Other (manual entry)",
+  "例: 天ぷら / ビストロ / ベーカリー": "Example: Tempura / Bistro / Bakery",
+  "東京都...": "Tokyo...",
+  "営業時間": "Business hours",
+  "例: 月-金 11:30-14:00 / 18:00-23:00": "Example: Mon-Fri 11:30-14:00 / 18:00-23:00",
+  "例: ランチ 1,500円 / 夜 8,000円": "Example: Lunch 1,500 JPY / Dinner 8,000 JPY",
+  "画像URL": "Image URL",
+  "説明": "Description",
+  "お店の特徴、人気メニュー、予約時の注意など": "Store features, popular dishes, reservation notes, etc.",
+  "店舗オーナー wallet（任意）": "Store owner wallet (optional)",
+  "空 → null": "Empty -> null",
+  "店舗を登録する": "Register store",
+  "結果": "Result",
+  "認証コードに紐づく店舗情報を取得しました。": "Retrieved store information linked to the authorization code.",
+  "この認証コードに紐づく店舗情報が見つかりません。adminにコード発行内容を確認してください。": "No store information was found for this authorization code. Ask admin to check the issued code.",
+  "認証コードから店舗 node id / store_ref と店名を取得してから登録してください。": "Retrieve the store node id / store_ref and store name from the authorization code before registering.",
+  "来店レビューを投稿": "Post a visit review",
+  "来店選択済み": "Visit selected",
+  "来店を選択": "Select a visit",
+  "QR来店記録後、未レビューの来店だけを選択できます。": "After recording a QR visit, only unreviewed visits can be selected.",
+  "レビューする来店": "Visit to review",
+  "レビュー可能な来店がありません。先に店舗QRから来店を記録してください。": "No visits are available for review. Record a visit from the store QR first.",
+  "タイトル": "Title",
+  "例: また行きたいお店": "Example: A place I want to visit again",
+  "口コミ本文": "Review body",
+  "料理、接客、雰囲気などを入力": "Enter food, service, atmosphere, etc.",
+  "レビューを投稿する": "Post review",
+  "口コミを探す": "Find reviews",
+  "最新10件を起点に、店舗名・ジャンル・エリア・評価・訪問者で絞り込めます。": "Start with the latest 10, then filter by store name, genre, area, rating, and visitor.",
+  "店名・本文・エリア・レビュアーで検索": "Search by store, text, area, or reviewer",
+  "すべての店舗": "All stores",
+  "すべてのエリア": "All areas",
+  "すべての評価": "All ratings",
+  "すべての訪問者": "All visitors",
+  "検索モード": "Search mode",
+  "最新10件": "Latest 10",
+  "店舗別に取得": "Fetch by store",
+  "訪問者別に取得": "Fetch by visitor",
+  "最新口コミから10件を表示しています。": "Showing 10 reviews from the latest reviews.",
+  "表示件数": "Items per page",
+  "最新10件を再表示": "Show latest 10 again",
+  "件の口コミ": "reviews",
+  "最新10件をデフォルト表示": "Default latest 10",
+  "検索結果": "Search results",
+  "エリア未設定": "Area not set",
+  "編集対象にする": "Select for editing",
+  "条件に合う口コミがありません。": "No reviews match your filters.",
+  "キーワードや評価条件を変えて検索してください。": "Change keywords or rating filters and search again.",
+  "口コミの編集・非表示": "Edit / hide review",
+  "レビューを選択": "Select review",
+  "変更なし": "No change",
+  "非表示にする": "Hide",
+  "レビュアーログイン": "Reviewer login",
+  "ウォレットを選択": "Select wallet",
+  "キーを選択": "Select key",
+  "状態を確認": "Check status",
+  "パスワード確認": "Password confirmation",
+  "ログインする": "Log in",
+  "ログイン候補": "Login candidates",
+  "* ローカル keyring の一覧です": "* List from the local keyring",
+  "（キーがありません）": "(No keys)",
+  "ログイン検証（アプリ内パスワード確認）": "Login verification (in-app password check)",
+  "※ ブロックチェーンの鍵とは無関係な、アプリ内のアカウントパスワードを検証します。": "* Verifies the in-app account password, unrelated to blockchain keys.",
+  "対象アドレス": "Target address",
+  "アドレスを選択": "Select address",
+  "状態を更新": "Update status",
+  "パスワード検証": "Password verification",
+  "ログイン検証": "Verify login",
+  "パスワード未設定の場合は": "If no password is set,",
+  "の「アプリ内パスワード」から設定してください。": "set it from \"In-app password\" in",
+  "レビュアーアカウント": "Reviewer account",
+  "現在のレビュアー": "Current reviewer",
+  "（未選択）": "(Not selected)",
+  "一覧を再読込": "Reload list",
+  "先頭を選択": "Select first",
+  "このキーを使う（CFGへ保存）": "Use this key (save to CFG)",
+  "Auth 状態を取得": "Get auth status",
+  "現在の CFG": "Current CFG",
+  "利用できるウォレット": "Available wallets",
+  "（キーが見つかりませんでした）": "(No keys found)",
+  "新しいレビュアーを作成": "Create a new reviewer",
+  "作成して現在のキーにする": "Create and set as current key",
+  "ログイン用パスワード": "Login password",
+  "* 開発用。ブロックチェーン鍵とは無関係です。": "* For development. Not related to blockchain keys.",
+  "ログイン検証": "Login verification",
+  "パスワードを設定": "Set password",
+  "売上・手数料の出金": "Withdraw sales and fees",
+  "通貨": "Denom",
+  "金額（任意）": "Amount (optional)",
+  "全額": "All",
+  "レビュー応援残高を出金": "Withdraw review tip balance",
+  "プラットフォーム手数料を出金": "Withdraw platform fees",
+  "結果（tips）": "Result (tips)",
+  "結果（fees）": "Result (fees)",
+};
+
+const REPLACEMENTS = [
+  [/^(.+) の後$/, "After $1"],
+  [/^(\d+)件$/, "$1 items"],
+  [/^(\d+)件の口コミ$/, "$1 reviews"],
+  [/^訪問者 (.+)$/, "Visitor $1"],
+  [/^店舗情報を取得できませんでした。$/, "Could not retrieve store information."],
+  [/^store_id を入力してください。$/, "Enter store_id."],
+  [/^店舗を選択してください。$/, "Select a store."],
+  [/^visitor address を入力してください。$/, "Enter visitor address."],
+  [/^QR code を入力してください$/, "Enter the QR code."],
+  [/^QR code を1行以上入力してください$/, "Enter at least one QR code line."],
+  [/^認証コード、店舗 node id \/ store_ref、店名を入力してください$/, "Enter authorization code, store node id / store_ref, and store name."],
+  [/^指定した store_id が存在しません$/, "The specified store_id does not exist."],
+  [/^指定した店舗は非アクティブです$/, "The specified store is inactive."],
+  [/^この QR code はすでに使用済みです。別の QR code を利用してください。$/, "This QR code has already been used. Use another QR code."],
+  [/^この QR code の commit が未登録です。(.+)$/, "The commit for this QR code is not registered. $1"],
+  [/^(.+)から (.+) を取得しました。$/, "Retrieved $2 from $1."],
+  [/^(.+)から store_id=(.+) を取得しました。$/, "Retrieved store_id=$2 from $1."],
+  [/^QR読み取りに失敗しました: (.+)$/, "QR scan failed: $1"],
+  [/^カメラを開始できませんでした: (.+)$/, "Could not start camera: $1"],
+];
+
+const ATTRS = ["placeholder", "title", "aria-label", "alt"];
+const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "PRE", "CODE", "TEXTAREA"]);
+const ORIGINAL_ATTR = "data-i18n-original-";
+const originalTextNodes = new WeakMap();
+
+function normalizeLang(lng) {
+  return String(lng || "ja").startsWith("en") ? "en" : "ja";
+}
+
+function translateText(value, lang) {
+  if (lang !== "en" || !value) return value;
+  const leading = value.match(/^\s*/)?.[0] || "";
+  const trailing = value.match(/\s*$/)?.[0] || "";
+  const core = value.trim();
+  if (!core) return value;
+  if (EN[core]) return `${leading}${EN[core]}${trailing}`;
+  for (const [pattern, replacement] of REPLACEMENTS) {
+    if (pattern.test(core)) return `${leading}${core.replace(pattern, replacement)}${trailing}`;
+  }
+  return value;
+}
+
+function shouldSkip(node) {
+  const parent = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  if (!parent) return true;
+  if (parent.closest("[data-i18n-skip], pre, code, textarea, script, style")) return true;
+  return SKIP_TAGS.has(parent.tagName);
+}
+
+function applyTextNode(node, lang) {
+  if (shouldSkip(node)) return;
+  const current = node.nodeValue;
+  if (!node.parentElement || !current?.trim()) return;
+  const original = originalTextNodes.get(node) || current;
+  if (!originalTextNodes.has(node)) originalTextNodes.set(node, original);
+  node.nodeValue = lang === "en" ? translateText(original, lang) : original;
+}
+
+function applyElementAttrs(el, lang) {
+  if (!(el instanceof Element) || el.closest("[data-i18n-skip], pre, code, textarea, script, style")) return;
+  for (const attr of ATTRS) {
+    if (!el.hasAttribute(attr)) continue;
+    const key = `${ORIGINAL_ATTR}${attr}`;
+    const original = el.getAttribute(key) || el.getAttribute(attr) || "";
+    if (!el.hasAttribute(key)) el.setAttribute(key, original);
+    el.setAttribute(attr, lang === "en" ? translateText(original, lang) : original);
+  }
+}
+
+function walk(root, lang) {
+  if (!root) return;
+  if (root.nodeType === Node.TEXT_NODE) {
+    applyTextNode(root, lang);
+    return;
+  }
+  if (!(root instanceof Element) && root !== document.body) return;
+  if (root instanceof Element) applyElementAttrs(root, lang);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  let node = walker.nextNode();
+  while (node) {
+    if (node.nodeType === Node.TEXT_NODE) applyTextNode(node, lang);
+    else applyElementAttrs(node, lang);
+    node = walker.nextNode();
+  }
+}
+
+export function useGlobalPageTranslation() {
+  const { i18n } = useTranslation();
+  const lang = normalizeLang(i18n.language);
+
+  useEffect(() => {
+    document.documentElement.lang = lang;
+    walk(document.body, lang);
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        mutation.addedNodes.forEach((node) => walk(node, lang));
+        if (mutation.type === "attributes") walk(mutation.target, lang);
+      }
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ATTRS,
+    });
+    return () => observer.disconnect();
+  }, [lang]);
+}

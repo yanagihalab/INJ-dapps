@@ -3,6 +3,8 @@
 import React from "react";
 import { Routes, Route, NavLink, Navigate } from "react-router-dom";
 import "./index.css";
+import LanguageSwitcher from "./components/prb/LanguageSwitcher.jsx";
+import { useGlobalPageTranslation } from "./lib/pageTranslations.js";
 
 // Pages
 import HomePage from "./pages/HomePage.jsx";
@@ -29,6 +31,8 @@ import AccountManager from "./pages/accounts/AccountManager.jsx";
 import KeyLogin from "./pages/accounts/KeyLogin.jsx";
 
 export default function App() {
+  useGlobalPageTranslation();
+
   return (
     <>
       <header className="appbar">
@@ -50,6 +54,7 @@ export default function App() {
         <NavLink className="appbar-cta" to="/visits/record">
           QRで来店
         </NavLink>
+        <LanguageSwitcher />
       </header>
 
       <div className="container">

@@ -9,17 +9,17 @@ export default function LanguageSwitcher() {
   };
 
   return (
-    <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+    <div className="language-switcher" aria-label="Language switcher">
       <button
         type="button"
-        className={`btn secondary ${i18n.language === "ja" ? "active" : ""}`}
+        className={i18n.language?.startsWith("ja") ? "active" : ""}
         onClick={() => setLang("ja")}
       >
         日本語
       </button>
       <button
         type="button"
-        className={`btn secondary ${i18n.language === "en" ? "active" : ""}`}
+        className={i18n.language?.startsWith("en") ? "active" : ""}
         onClick={() => setLang("en")}
       >
         English

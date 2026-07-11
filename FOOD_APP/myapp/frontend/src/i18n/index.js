@@ -31,6 +31,8 @@ i18n
     returnNull: false,
   });
 
+document.documentElement.lang = i18n.language;
+
 // 言語変更時に保存
 i18n.on("languageChanged", (lng) => {
   try {

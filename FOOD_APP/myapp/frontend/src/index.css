@@ -127,6 +127,34 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   text-decoration: none;
   transform: translateY(-1px);
 }
+.language-switcher {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .78);
+}
+.language-switcher button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 900;
+}
+.language-switcher button.active {
+  background: var(--text);
+  color: #fff;
+}
+.language-switcher button:hover {
+  transform: none;
+  filter: none;
+}
 
 /* -------- Layout -------- */
 .container {
