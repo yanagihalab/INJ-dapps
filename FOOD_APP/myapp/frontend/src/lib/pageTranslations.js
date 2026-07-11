@@ -1,6 +1,39 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
+const JA = {
+  "INJ Reviews": "INJ Reviews",
+  "Verified restaurant guide": "認証済み店舗レビュー",
+  "On-chain restaurant reviews": "オンチェーン店舗レビュー",
+  "Restaurant Review": "店舗レビュー",
+  "Featured": "注目",
+  "Store": "店舗",
+  "Visit": "来店",
+  "Review": "口コミ",
+  "Reviews": "口コミ",
+  "Store QR": "店舗QR",
+  "Restaurant Search": "店舗検索",
+  "Recent reviews": "最近の口コミ",
+  "Review Operations": "口コミ管理",
+  "Visit Operations": "来店管理",
+  "Visit QR": "来店QR",
+  "Admin Controls": "管理操作",
+  "Admin Login": "管理者ログイン",
+  "Current": "現在値",
+  "Next": "変更後",
+  "stores": "店舗",
+  "reviews": "口コミ",
+  "verified visits": "認証済み来店",
+  "Store #": "店舗 #",
+  "Store name": "店名",
+  "Store owner": "店舗オーナー",
+  "Store editing": "店舗編集",
+  "Registration codes": "登録コード",
+  "Result": "結果",
+  "Settings": "設定",
+  "English": "English",
+};
+
 const EN = {
   "探す": "Search",
   "店舗一覧": "Stores",
@@ -19,6 +52,7 @@ const EN = {
   "注目の店舗": "Featured stores",
   "店舗を登録": "Register a store",
   "店舗情報を読み込んでいます。": "Loading store information.",
+  "店舗プロフィールはまだ編集中です。": "The store profile is still being edited.",
   "まだ店舗がありません。": "No stores yet.",
   "発行済みの認証コードで店舗登録から最初の店舗を追加してください。": "Use an issued authorization code to add the first store.",
   "店舗プロフィール登録": "Store profile registration",
@@ -94,6 +128,19 @@ const EN = {
   "店舗レビュー運営管理": "Store Review Admin",
   "店舗登録コード、来店QR、口コミルールを管理します。重要な操作は Keplr で署名します。": "Manage store registration codes, visit QR, and review rules. Important actions are signed with Keplr.",
   "未設定": "Not set",
+  "contract 未設定": "contract not set",
+  "未接続": "Not connected",
+  "wallet 未接続": "wallet not connected",
+  "admin 未取得": "admin not loaded",
+  "owner未設定": "owner not set",
+  "memoなし": "no memo",
+  "Keplrでログイン": "Log in with Keplr",
+  ": Keplr接続": ": Keplr connection",
+  ": admin照合": ": admin verification",
+  "admin API token（セッション保存）": "Admin API token (session storage)",
+  "token保存": "Save token",
+  "token削除": "Delete token",
+  "Keplrで管理者ウォレットにログインすると、現在の設定値、店舗管理、QR発行、実行結果を確認できます。": "Log in with the admin wallet in Keplr to view current settings, store management, QR issuance, and execution results.",
   "ログイン後に表示": "Shown after login",
   "管理者としてログイン済み": "Logged in as admin",
   "このウォレットは管理者ではありません": "This wallet is not an admin",
@@ -126,6 +173,36 @@ const EN = {
   "変更あり": "Changed",
   "変更なし": "No change",
   "保存して反映": "Save and apply",
+  "変更前": "Before",
+  "変更後": "After",
+  "同じ": "Same",
+  "応援に使える通貨": "Allowed tip denoms",
+  "口コミルールを保存": "Save review rules",
+  "admin wallet 接続後に実行できます。": "You can run this after connecting the admin wallet.",
+  "掲載状態": "Publication status",
+  "掲載状態を更新": "Update publication status",
+  "レビュー投稿できる期間": "Review submission window",
+  "投稿期間を更新": "Update submission window",
+  "店舗プロフィール編集": "Edit store profile",
+  "編集する店舗": "Store to edit",
+  "カテゴリ": "Category",
+  "店舗オーナー wallet": "Store owner wallet",
+  "店舗プロフィールを保存": "Save store profile",
+  "店舗登録コード": "Store registration code",
+  "admin API token が必要です": "Admin API token is required",
+  "登録コードのオンチェーン発行後、サーバー側メタ情報を保存するために token を入力してください。": "After issuing the code on-chain, enter the token to save server-side metadata.",
+  "店舗登録コード発行": "Issue store registration code",
+  "自動生成": "Auto-generated",
+  "まだ読み込まれていません。": "Not loaded yet.",
+  "口コミ一覧を開く": "Open review list",
+  "口コミ投稿画面を開く": "Open review posting page",
+  "店舗別の来店履歴を読み込み、visitorで絞り込み、必要に応じて来店を取り消せます。": "Load visit history by store, filter by visitor, and revoke visits when needed.",
+  "来店を取り消す": "Revoke visit",
+  "取り消し済み": "Revoked",
+  "レビュー済み": "Reviewed",
+  "来店データがありません。": "No visit data.",
+  "来店履歴を開く": "Open visit history",
+  "現在のサービス設定": "Current service settings",
   "最新口コミを読み込み、対象レビューを選択して編集または非表示にできます。": "Load recent reviews, select one, then edit or hide it.",
   "最新口コミを読み込む": "Load recent reviews",
   "タイトルなし": "No title",
@@ -181,6 +258,8 @@ const EN = {
   "検索条件を変えるか、新しい店舗を登録してください。": "Change the filters or register a new store.",
   "Store QR": "Store QR",
   "店舗に掲示する来店記録用QRを作成します。QR code はadminで事前登録した値を入力してください。": "Create a visit-recording QR for display at the store. Enter a QR code value pre-registered by admin.",
+  "adminで登録済みのQR code": "QR code registered by admin",
+  "店舗掲示用QR": "Store display QR",
   "店舗詳細へ戻る": "Back to store details",
   "掲示用QR": "Display QR",
   "QRを生成しています。": "Generating QR.",
@@ -329,13 +408,41 @@ const EN = {
   "プラットフォーム手数料を出金": "Withdraw platform fees",
   "結果（tips）": "Result (tips)",
   "結果（fees）": "Result (fees)",
+  "1日": "1 day",
+  "3日": "3 days",
+  "7日": "7 days",
+  "14日": "14 days",
+  "30日": "30 days",
+  "Keplr 拡張機能を有効にして、このページを再読み込みしてください。": "Enable the Keplr extension and reload this page.",
+  "Settings で chainId と RPC endpoint を設定してください。": "Set chainId and RPC endpoint in Settings.",
+  "先に Keplr 接続を行い、接続許可を完了してください。": "Connect Keplr first and approve the connection.",
+  "接続中ウォレットが contract admin と一致していません。admin アドレスのウォレットに切り替えてください。": "The connected wallet does not match the contract admin. Switch to the admin address wallet.",
+  "RPC endpoint、ウォレット残高、対象チェーンのアカウント状態を確認してください。": "Check the RPC endpoint, wallet balance, and account status on the target chain.",
+  "ウォレット残高、fee、gas limit を確認してください。gas limit は少し大きめにしてください。": "Check wallet balance, fee, and gas limit. Use a slightly larger gas limit.",
+  "コントラクト側で権限拒否されています。接続中 wallet が現在の admin か確認してください。": "The contract rejected permission. Confirm the connected wallet is the current admin.",
+  "contract address、接続 wallet、RPC、fee/gas、入力値を確認してください。": "Check contract address, connected wallet, RPC, fee/gas, and input values.",
+  "このブラウザはQR読み取りに未対応です。店舗に表示されたQRコードの文字列を手入力してください。": "This browser does not support QR scanning. Enter the QR text shown at the store manually.",
+  "カメラを利用できません。QRコードの文字列を手入力してください。": "The camera is unavailable. Enter the QR code text manually.",
+  "店舗に表示されている一意のQRコードをカメラに映してください。": "Point the camera at the unique QR code displayed at the store.",
+  "QRコードを読み取り、店舗情報も取得しました。このまま来店を記録できます。": "The QR code was scanned and store information was retrieved. You can record the visit now.",
+  "QRコードから店舗情報を取得しました。": "Retrieved store information from the QR code.",
+  "このQRコードから店舗情報は取得できませんでした。店舗を選択してください。": "Could not retrieve store information from this QR code. Select the store.",
+  "QRコードを読み取りました。店舗情報が含まれていないため、店舗を選択してください。": "The QR code was scanned, but it did not include store information. Select the store.",
+  "store_id が無効です": "store_id is invalid",
+  "Keplrで接続中のウォレットが未作成/未資金です。そのアドレスへ少額 INJ を送金してください。": "The connected Keplr wallet is not created or funded. Send a small amount of INJ to that address.",
+  "署名者や店舗の状態を確認してください。QR 来店記録では visitor は送信者になります。": "Check the signer and store status. For QR visit records, the visitor is the sender.",
 };
 
 const REPLACEMENTS = [
   [/^(.+) の後$/, "After $1"],
+  [/^現在のアドレス: (.+)$/, "Current address: $1"],
+  [/^(.+)件の店舗$/, "$1 stores"],
+  [/^(.+)件 変更予定$/, "$1 changes pending"],
   [/^(\d+)件$/, "$1 items"],
   [/^(\d+)件の口コミ$/, "$1 reviews"],
+  [/^Store #(.+) \/ memoなし$/, "Store #$1 / no memo"],
   [/^訪問者 (.+)$/, "Visitor $1"],
+  [/^(\d+) reviews$/, "$1 reviews"],
   [/^店舗情報を取得できませんでした。$/, "Could not retrieve store information."],
   [/^store_id を入力してください。$/, "Enter store_id."],
   [/^店舗を選択してください。$/, "Select a store."],
@@ -353,8 +460,17 @@ const REPLACEMENTS = [
   [/^カメラを開始できませんでした: (.+)$/, "Could not start camera: $1"],
 ];
 
+const JA_REPLACEMENTS = [
+  [/^(\d+) reviews$/, "$1件の口コミ"],
+  [/^(\d+) stores$/, "$1件の店舗"],
+  [/^Store #(.+)$/, "店舗 #$1"],
+  [/^Visitor (.+)$/, "訪問者 $1"],
+  [/^After (.+)$/, "$1 の後"],
+];
+
 const ATTRS = ["placeholder", "title", "aria-label", "alt"];
 const SKIP_TAGS = new Set(["SCRIPT", "STYLE", "PRE", "CODE", "TEXTAREA"]);
+const ATTR_SKIP_SELECTOR = "[data-i18n-skip], pre, code, script, style";
 const ORIGINAL_ATTR = "data-i18n-original-";
 const originalTextNodes = new WeakMap();
 
@@ -363,14 +479,18 @@ function normalizeLang(lng) {
 }
 
 function translateText(value, lang) {
-  if (lang !== "en" || !value) return value;
+  if (!value) return value;
   const leading = value.match(/^\s*/)?.[0] || "";
   const trailing = value.match(/\s*$/)?.[0] || "";
   const core = value.trim();
   if (!core) return value;
-  if (EN[core]) return `${leading}${EN[core]}${trailing}`;
-  for (const [pattern, replacement] of REPLACEMENTS) {
-    if (pattern.test(core)) return `${leading}${core.replace(pattern, replacement)}${trailing}`;
+  const dictionary = lang === "en" ? EN : JA;
+  if (dictionary[core]) return `${leading}${dictionary[core]}${trailing}`;
+  const replacements = lang === "en" ? REPLACEMENTS : JA_REPLACEMENTS;
+  if (replacements.length) {
+    for (const [pattern, replacement] of replacements) {
+      if (pattern.test(core)) return `${leading}${core.replace(pattern, replacement)}${trailing}`;
+    }
   }
   return value;
 }
@@ -388,17 +508,17 @@ function applyTextNode(node, lang) {
   if (!node.parentElement || !current?.trim()) return;
   const original = originalTextNodes.get(node) || current;
   if (!originalTextNodes.has(node)) originalTextNodes.set(node, original);
-  node.nodeValue = lang === "en" ? translateText(original, lang) : original;
+  node.nodeValue = translateText(original, lang);
 }
 
 function applyElementAttrs(el, lang) {
-  if (!(el instanceof Element) || el.closest("[data-i18n-skip], pre, code, textarea, script, style")) return;
+  if (!(el instanceof Element) || el.closest(ATTR_SKIP_SELECTOR)) return;
   for (const attr of ATTRS) {
     if (!el.hasAttribute(attr)) continue;
     const key = `${ORIGINAL_ATTR}${attr}`;
     const original = el.getAttribute(key) || el.getAttribute(attr) || "";
     if (!el.hasAttribute(key)) el.setAttribute(key, original);
-    el.setAttribute(attr, lang === "en" ? translateText(original, lang) : original);
+    el.setAttribute(attr, translateText(original, lang));
   }
 }
 

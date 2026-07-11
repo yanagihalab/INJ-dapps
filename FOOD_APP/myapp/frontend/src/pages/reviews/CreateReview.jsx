@@ -1,15 +1,35 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { RATING_OPTIONS, useChainOptions, visitLabel } from "../../lib/useChainOptions.js";
 import { executeWithKeplr } from "../../lib/walletExecute.js";
 
+const DEFAULT_COPY = {
+  ja: {
+    title: "最高",
+    body: "とても美味しかった",
+  },
+  en: {
+    title: "Excellent",
+    body: "It was very delicious",
+  },
+};
+
 export default function CreateReview() {
+  const { i18n } = useTranslation();
   const [visitId, setVisitId] = useState("");
   const [rating, setRating] = useState(5);
-  const [title, setTitle] = useState("最高");
-  const [body, setBody] = useState("とても美味しかった");
+  const [title, setTitle] = useState(DEFAULT_COPY.ja.title);
+  const [body, setBody] = useState(DEFAULT_COPY.ja.body);
   const [out, setOut] = useState("");
   const { stores, visits, busy: optionsBusy, reload } = useChainOptions();
   const reviewableVisits = visits.filter((v) => !v.reviewed && !v.revoked);
+
+  useEffect(() => {
+    const lang = i18n.language?.startsWith("en") ? "en" : "ja";
+    const other = lang === "en" ? "ja" : "en";
+    setTitle((current) => current === DEFAULT_COPY[other].title ? DEFAULT_COPY[lang].title : current);
+    setBody((current) => current === DEFAULT_COPY[other].body ? DEFAULT_COPY[lang].body : current);
+  }, [i18n.language]);
 
   const exec = async () => {
     const msg = { create_review: {
