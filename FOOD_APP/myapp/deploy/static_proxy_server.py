@@ -8,11 +8,14 @@ from urllib.parse import urlsplit
 
 
 HOST = os.environ.get("HOST", "127.0.0.1")
-PORT = int(os.environ.get("PORT", "8081"))
+raw_port = os.environ.get("FRONTEND_PORT") or os.environ.get("STATIC_PORT") or os.environ.get("PORT", "8081")
 DIST_DIR = Path(os.environ.get("DIST_DIR", "./dist")).resolve()
 BACKEND_HOST = os.environ.get("BACKEND_HOST", "127.0.0.1")
 BACKEND_PORT = int(os.environ.get("BACKEND_PORT", "8787"))
 BASE_PATH = os.environ.get("BASE_PATH", "").rstrip("/")
+PORT = int(raw_port)
+if PORT == BACKEND_PORT and BASE_PATH:
+    PORT = int(os.environ.get("FRONTEND_FALLBACK_PORT", "8081"))
 
 
 class Handler(BaseHTTPRequestHandler):

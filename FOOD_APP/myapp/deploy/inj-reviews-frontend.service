@@ -12,6 +12,7 @@ EnvironmentFile=/home/ubuntu/inj-reviews/.env
 Environment=BASE_PATH=/reviews
 Environment=HOST=127.0.0.1
 Environment=PORT=8081
+Environment=FRONTEND_PORT=8081
 Environment=DIST_DIR=/home/ubuntu/inj-reviews/dist
 Environment=BACKEND_HOST=127.0.0.1
 Environment=BACKEND_PORT=8787
