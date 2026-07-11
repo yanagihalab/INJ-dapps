@@ -10,6 +10,8 @@ import Settings from "./pages/Settings.jsx";
 
 import RegisterStore from "./pages/stores/RegisterStore.jsx";
 import StoreList from "./pages/stores/StoreList.jsx";
+import StoreDetail from "./pages/stores/StoreDetail.jsx";
+import StoreQrPage from "./pages/stores/StoreQrPage.jsx";
 
 import RecordVisit from "./pages/visits/RecordVisit.jsx";
 import VisitList from "./pages/visits/VisitList.jsx";
@@ -60,6 +62,8 @@ export default function App() {
           {/* STORES */}
           <Route path="/stores/register" element={<RegisterStore />} />
           <Route path="/stores/list" element={<StoreList />} />
+          <Route path="/stores/:storeId/qr" element={<StoreQrPage />} />
+          <Route path="/stores/:storeId" element={<StoreDetail />} />
 
           {/* VISITS */}
           <Route path="/visits/record" element={<RecordVisit />} />

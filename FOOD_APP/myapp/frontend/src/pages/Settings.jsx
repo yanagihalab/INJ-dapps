@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { API } from "../api.js";
+import { API, getAdminApiToken, setAdminApiToken } from "../api.js";
 
 export default function Settings() {
   const [cfg, setCfg] = useState(null);
@@ -10,6 +10,7 @@ export default function Settings() {
   });
   const [keys, setKeys] = useState([]);
   const [out, setOut] = useState("");
+  const [adminToken, setAdminToken] = useState(() => getAdminApiToken());
 
   useEffect(() => {
     (async () => {
@@ -26,13 +27,24 @@ export default function Settings() {
   }, []);
 
   const save = async () => {
-    const r = await API.saveConfig(form);
+    setAdminApiToken(adminToken);
+    const r = await API.saveConfig(form, adminToken);
     setOut(JSON.stringify(r, null, 2));
   };
 
   return (
     <div className="page">
       <h2>サービス接続設定</h2>
+
+      <div className="row" style={{flexDirection:"column", alignItems:"stretch"}}>
+        <label>admin API token（このタブのセッションのみ）</label>
+        <input
+          type="password"
+          value={adminToken}
+          onChange={(e) => setAdminToken(e.target.value)}
+          placeholder="サーバーの ADMIN_API_TOKEN"
+        />
+      </div>
 
       {["keyname","myAddr","codeId","contract","injNode","chainId","injectiveHomeHostPath","gasAdjustment","defaultFees","wasmHostPath"].map(k => (
         <div className="row" key={k} style={{flexDirection:"column", alignItems:"stretch"}}>

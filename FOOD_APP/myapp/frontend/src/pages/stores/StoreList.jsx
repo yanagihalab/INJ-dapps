@@ -176,8 +176,10 @@ export default function StoreList() {
                     <span>{s.owner || "owner未設定"}</span>
                   </div>
                   <div className="review-card-actions">
-                    <NavLink to="/visits/record">来店記録</NavLink>
-                    <NavLink to="/reviews/list">レビュー</NavLink>
+                    <NavLink to={`/stores/${s.id}`}>店舗詳細</NavLink>
+                    <NavLink to={`/stores/${s.id}/qr`}>掲示QR</NavLink>
+                    <NavLink to={`/visits/record?node_id=${encodeURIComponent(s.store_ref || "")}&store_id=${s.id}`}>QR読取</NavLink>
+                    <NavLink to="/reviews/list">口コミ</NavLink>
                   </div>
                 </div>
               </article>

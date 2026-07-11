@@ -15,11 +15,45 @@ const corsOrigin = String(process.env.CORS_ORIGIN || "").trim();
 app.use(cors(corsOrigin ? { origin: corsOrigin.split(",").map((v) => v.trim()).filter(Boolean) } : undefined));
 app.use(express.json({ limit: "2mb" }));
 const KEYLESS_MODE = String(process.env.KEYLESS_MODE || "false").toLowerCase() === "true";
+const ADMIN_API_TOKEN = String(process.env.ADMIN_API_TOKEN || "").trim();
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 10 * 60 * 1000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 12);
+const rateLimitBuckets = new Map();
 
 app.use((req, _res, next) => {
   console.log(`[REQ] ${req.method} ${req.url}`);
   next();
 });
+
+function clientIp(req) {
+  const forwarded = String(req.get("x-forwarded-for") || "").split(",")[0].trim();
+  return forwarded || req.ip || req.socket?.remoteAddress || "unknown";
+}
+
+function rateLimit({ windowMs = RATE_LIMIT_WINDOW_MS, max = RATE_LIMIT_MAX, name = "default" } = {}) {
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = `${name}:${clientIp(req)}`;
+    const bucket = rateLimitBuckets.get(key) || { count: 0, resetAt: now + windowMs };
+    if (bucket.resetAt <= now) {
+      bucket.count = 0;
+      bucket.resetAt = now + windowMs;
+    }
+    bucket.count += 1;
+    rateLimitBuckets.set(key, bucket);
+    res.setHeader("X-RateLimit-Limit", String(max));
+    res.setHeader("X-RateLimit-Remaining", String(Math.max(0, max - bucket.count)));
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1000)));
+    if (bucket.count > max) {
+      return res.status(429).json({
+        error: "rate limit exceeded",
+        message: "試行回数が多すぎます。時間を置いて再試行してください。",
+        retry_after_seconds: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
+      });
+    }
+    return next();
+  };
+}
 
 // ---- Data dir for app-internal password store ----
 const DATA_DIR = process.env.DATA_DIR || "/data";
@@ -45,6 +79,30 @@ function loadStoreRegistrationMetaDb() {
 
 function saveStoreRegistrationMetaDb(db) {
   writeJsonSafe(STORE_REGISTRATION_META_PATH, db);
+}
+
+function constantTimeEqualString(a, b) {
+  const left = Buffer.from(String(a || ""));
+  const right = Buffer.from(String(b || ""));
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function requireAdminApi(req, res, next) {
+  if (!ADMIN_API_TOKEN) {
+    return res.status(403).json({
+      error: "admin API token is not configured",
+      hint: "Set ADMIN_API_TOKEN on the server to enable this write endpoint.",
+    });
+  }
+  const supplied = String(
+    req.get("x-admin-api-key") ||
+    req.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    ""
+  ).trim();
+  if (!constantTimeEqualString(supplied, ADMIN_API_TOKEN)) {
+    return res.status(401).json({ error: "invalid admin API token" });
+  }
+  return next();
 }
 
 function loadAuthDb() {
@@ -356,6 +414,37 @@ function shouldUseLcdFallback() {
   return KEYLESS_MODE || !String(CFG.injectiveImage || "").trim();
 }
 
+async function smartQuery(contract, msg) {
+  if (!contract) throw new Error("contract is required");
+  if (shouldUseLcdFallback()) {
+    const queryData = Buffer.from(JSON.stringify(msg)).toString("base64");
+    const url = `${lcdBase()}/cosmwasm/wasm/v1/contract/${encodeURIComponent(contract)}/smart/${encodeURIComponent(queryData)}`;
+    const json = await fetchJson(url);
+    return { ok: true, url, json, data: json?.data ?? json };
+  }
+
+  const out = await runDocker([
+    "query","wasm","contract-state","smart",
+    contract, JSON.stringify(msg),
+    "--node", CFG.injNode,
+    "-o", "json",
+  ]);
+  const rawSrc = (out.stdout && out.stdout.trim().length > 0) ? out.stdout : out.stderr;
+  const parsed = tryParseSmartJson(rawSrc);
+  return { cmd: `docker ${out.args.join(" ")}`, exitCode: out.code, stderr: out.stderr, ...parsed };
+}
+
+function unwrapSmartData(resp) {
+  return resp?.json?.data ?? resp?.data ?? resp?.json ?? resp;
+}
+
+function reviewSortValue(review) {
+  const created = Number(review?.created_at);
+  if (Number.isFinite(created)) return created;
+  const id = Number(review?.id);
+  return Number.isFinite(id) ? id : 0;
+}
+
 async function pollTxAttr(hash, attrNames, { attempts = 12, delayMs = 2500 } = {}) {
   for (let i = 0; i < attempts; i += 1) {
     const tx = await queryTxByHash(hash);
@@ -375,8 +464,8 @@ app.get("/api/health", (_req, res) => {
     hasKeyPath,
     node: CFG.injNode,
     chainId: CFG.chainId,
-    configPath: CONFIG_PATH,
     configPersisted: fs.existsSync(CONFIG_PATH),
+    adminApiConfigured: Boolean(ADMIN_API_TOKEN),
   });
 });
 
@@ -389,13 +478,13 @@ function rejectKeyless(res, feature) {
 
 // config
 app.get("/api/config", (_req, res) => res.json({ ...CFG, configPath: CONFIG_PATH }));
-app.post("/api/config", (req, res) => {
+app.post("/api/config", requireAdminApi, (req, res) => {
   for (const k of CONFIG_KEYS) if (k in req.body) CFG[k] = req.body[k];
   saveConfig(CFG);
   res.json({ ok: true, CFG: { ...CFG, configPath: CONFIG_PATH } });
 });
 
-app.post("/api/store-registration/metadata", (req, res) => {
+app.post("/api/store-registration/metadata", requireAdminApi, (req, res) => {
   try {
     const entries = Array.isArray(req.body?.entries) ? req.body.entries : [];
     if (!entries.length) return res.status(400).json({ error: "entries is required" });
@@ -423,7 +512,7 @@ app.post("/api/store-registration/metadata", (req, res) => {
   }
 });
 
-app.post("/api/store-registration/resolve", (req, res) => {
+app.post("/api/store-registration/resolve", rateLimit({ name: "store-registration-resolve", max: 20 }), (req, res) => {
   try {
     const code = String(req.body?.auth_code || req.body?.code || "").trim();
     if (!code) return res.status(400).json({ error: "auth_code is required" });
@@ -663,28 +752,83 @@ app.post("/api/query/smart", async (req, res) => {
   const msg = req.body.msg || {};
   if (!contract) return res.status(400).json({ error: "contract is required" });
 
-  if (shouldUseLcdFallback()) {
-    try {
-      const queryData = Buffer.from(JSON.stringify(msg)).toString("base64");
-      const url = `${lcdBase()}/cosmwasm/wasm/v1/contract/${encodeURIComponent(contract)}/smart/${encodeURIComponent(queryData)}`;
-      const json = await fetchJson(url);
-      return res.json({ ok: true, url, json, data: json?.data ?? json });
-    } catch (e) {
-      return res.status(e.status || 500).json({ error: String(e.message || e), url: e.url, body: e.body });
-    }
+  try {
+    return res.json(await smartQuery(contract, msg));
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: String(e.message || e), url: e.url, body: e.body });
   }
+});
 
-  const out = await runDocker([
-    "query","wasm","contract-state","smart",
-    contract, JSON.stringify(msg),
-    "--node", CFG.injNode,
-    "-o", "json",
-  ]);
+app.get("/api/reviews/latest", async (req, res) => {
+  const contract = String(req.query.contract || CFG.contract || "").trim();
+  const limit = Math.min(Math.max(Number(req.query.limit || 10) || 10, 1), 50);
+  const pageLimit = Math.min(Math.max(Number(req.query.page_limit || 100) || 100, 1), 100);
+  if (!contract) return res.status(400).json({ error: "contract is required" });
 
-  const rawSrc = (out.stdout && out.stdout.trim().length > 0) ? out.stdout : out.stderr;
-  const parsed = tryParseSmartJson(rawSrc);
+  try {
+    const stores = [];
+    let startAfterStore = null;
+    for (let page = 0; page < 20; page += 1) {
+      const resp = await smartQuery(contract, {
+        stores: { start_after: startAfterStore, limit: pageLimit },
+      });
+      const batch = unwrapSmartData(resp)?.stores || [];
+      stores.push(...batch);
+      if (batch.length < pageLimit) break;
+      startAfterStore = Number(batch[batch.length - 1]?.id);
+      if (!startAfterStore) break;
+    }
 
-  res.json({ cmd: `docker ${out.args.join(" ")}`, exitCode: out.code, stderr: out.stderr, ...parsed });
+    const reviews = [];
+    for (const store of stores) {
+      let startAfterReview = null;
+      for (let page = 0; page < 20; page += 1) {
+        const resp = await smartQuery(contract, {
+          reviews_by_store: {
+            store_id: Number(store.id),
+            start_after: startAfterReview,
+            limit: pageLimit,
+          },
+        });
+        const batch = unwrapSmartData(resp)?.reviews || [];
+        for (const review of batch) {
+          reviews.push({
+            ...review,
+            store: {
+              id: store.id,
+              store_ref: store.store_ref,
+              name: store.name,
+              category: store.category,
+              address: store.address,
+              price_range: store.price_range,
+            },
+          });
+        }
+        if (batch.length < pageLimit) break;
+        startAfterReview = Number(batch[batch.length - 1]?.id);
+        if (!startAfterReview) break;
+      }
+    }
+
+    const latest = reviews
+      .filter((review) => !review.hidden)
+      .sort((a, b) => {
+        const createdDiff = reviewSortValue(b) - reviewSortValue(a);
+        if (createdDiff !== 0) return createdDiff;
+        return Number(b?.id || 0) - Number(a?.id || 0);
+      })
+      .slice(0, limit);
+
+    return res.json({
+      ok: true,
+      contract,
+      stores_scanned: stores.length,
+      reviews_scanned: reviews.length,
+      reviews: latest,
+    });
+  } catch (e) {
+    return res.status(e.status || 500).json({ error: String(e.message || e), url: e.url, body: e.body });
+  }
 });
 
 // query tx
@@ -1127,12 +1271,12 @@ app.get("/api/auth/status", (req, res) => {
   if (!address) return res.status(400).json({ error: "address required" });
   return res.json(pwStatus(address));
 });
-app.post("/api/auth/set_password", (req, res) => {
+app.post("/api/auth/set_password", requireAdminApi, (req, res) => {
   const { address, password, hint } = req.body || {};
   try { return res.json(pwSet(address, password, hint)); }
   catch (e) { return res.status(400).json({ error: String(e.message || e) }); }
 });
-app.post("/api/auth/verify_password", (req, res) => {
+app.post("/api/auth/verify_password", rateLimit({ name: "auth-verify-password" }), (req, res) => {
   const { address, password } = req.body || {};
   if (!address || !password) return res.status(400).json({ error: "address & password are required" });
   return res.json(pwVerify(address, password));
@@ -1148,7 +1292,7 @@ app.get("/api/accounts/password_status", async (req, res) => {
   }
 });
 
-app.post("/api/accounts/set_password", async (req, res) => {
+app.post("/api/accounts/set_password", requireAdminApi, async (req, res) => {
   try {
     const address = await resolveIdentityAddress(req.body || {});
     const { password, hint } = req.body || {};
@@ -1158,7 +1302,7 @@ app.post("/api/accounts/set_password", async (req, res) => {
   }
 });
 
-app.post("/api/accounts/verify_password", async (req, res) => {
+app.post("/api/accounts/verify_password", rateLimit({ name: "accounts-verify-password" }), async (req, res) => {
   try {
     const address = await resolveIdentityAddress(req.body || {});
     const { password } = req.body || {};

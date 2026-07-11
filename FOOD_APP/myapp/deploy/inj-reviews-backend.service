@@ -1,0 +1,19 @@
+[Unit]
+Description=INJ Reviews backend API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/inj-reviews/backend
+EnvironmentFile=/home/ubuntu/inj-reviews/.env
+Environment=PATH=/home/ubuntu/.local/node-v20.19.5-linux-x64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/home/ubuntu/.local/node-v20.19.5-linux-x64/bin/node /home/ubuntu/inj-reviews/backend/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

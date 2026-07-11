@@ -27,6 +27,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.proxy()
         return self.serve_static()
 
+    def do_HEAD(self):
+        request_path = self.normalized_path()
+        if request_path is None:
+            return
+        if request_path.startswith("/api/"):
+            return self.proxy()
+        return self.serve_static(write_body=False)
+
     def do_POST(self):
         request_path = self.normalized_path()
         if request_path is None:
@@ -85,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
         finally:
             conn.close()
 
-    def serve_static(self):
+    def serve_static(self, write_body=True):
         request_path = self.normalized_path()
         if request_path is None:
             return
@@ -109,7 +117,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("X-Frame-Options", "SAMEORIGIN")
         self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         self.end_headers()
-        self.wfile.write(data)
+        if write_body:
+            self.wfile.write(data)
 
 
 if __name__ == "__main__":

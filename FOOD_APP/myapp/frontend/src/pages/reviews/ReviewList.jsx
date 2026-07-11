@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { NavLink } from "react-router-dom";
 import { API } from "../../api.js";
 import {
   LIMIT_OPTIONS,
@@ -46,9 +47,28 @@ function latestReviews(reviews, limit = 10) {
     .slice(0, limit);
 }
 
+function shortAddress(addr) {
+  const value = String(addr || "");
+  if (value.length <= 18) return value || "未設定";
+  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
+function areaFromAddress(address) {
+  return String(address || "").trim().split(/[,\s　]/).filter(Boolean).slice(0, 2).join(" ");
+}
+
+function Stars({ value }) {
+  const score = Math.max(0, Math.min(5, Number(value) || 0));
+  return <span className="review-stars">{"★".repeat(score)}{"☆".repeat(5 - score)}</span>;
+}
+
 export default function ReviewList() {
   const [mode, setMode] = useState("latest");
   const [storeId, setStoreId] = useState("");
+  const [keyword, setKeyword] = useState("");
+  const [category, setCategory] = useState("");
+  const [area, setArea] = useState("");
+  const [ratingFilter, setRatingFilter] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [startAfter, setStartAfter] = useState("");
   const [limit, setLimit] = useState("10");
@@ -63,6 +83,21 @@ export default function ReviewList() {
     body: "",
   });
   const { stores, reviews, reviewers, busy: optionsBusy, reload } = useChainOptions();
+
+  const storeMap = useMemo(
+    () => new Map(stores.map((store) => [Number(store.id), store])),
+    [stores]
+  );
+
+  const categories = useMemo(
+    () => Array.from(new Set(stores.map((s) => s.category).filter(Boolean))).sort(),
+    [stores]
+  );
+
+  const areas = useMemo(
+    () => Array.from(new Set(stores.map((s) => areaFromAddress(s.address)).filter(Boolean))).sort(),
+    [stores]
+  );
 
   const lastReviewId = useMemo(() => {
     const last = rows[rows.length - 1];
@@ -82,27 +117,44 @@ export default function ReviewList() {
     }
   }, [mode, reviews]);
 
+  const visibleRows = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
+    return rows.filter((review) => {
+      if (review.hidden) return false;
+      const store = storeMap.get(Number(review.store_id));
+      const searchText = [
+        review.id,
+        review.title,
+        review.body,
+        review.reviewer,
+        store?.name,
+        store?.store_ref,
+        store?.category,
+        store?.address,
+        store?.price_range,
+      ].join(" ").toLowerCase();
+      return (
+        (!q || searchText.includes(q)) &&
+        (!storeId || Number(review.store_id) === Number(storeId)) &&
+        (!category || store?.category === category) &&
+        (!area || String(store?.address || "").includes(area)) &&
+        (!ratingFilter || Number(review.rating) === Number(ratingFilter)) &&
+        (mode !== "reviewer" || !reviewer || review.reviewer === reviewer)
+      );
+    });
+  }, [rows, keyword, storeId, category, area, ratingFilter, mode, reviewer, storeMap]);
+
   const buildQuery = () => {
     const page = {
       start_after: startAfter.trim() ? Number(startAfter) : null,
       limit: Number(limit) || 10,
     };
     if (mode === "store") {
-      if (!storeId.trim()) throw new Error("store_id を入力してください。");
-      return {
-        reviews_by_store: {
-          store_id: Number(storeId),
-          ...page,
-        },
-      };
+      if (!storeId.trim()) throw new Error("店舗を選択してください。");
+      return { reviews_by_store: { store_id: Number(storeId), ...page } };
     }
-    if (!reviewer.trim()) throw new Error("reviewer address を入力してください。");
-    return {
-      reviews_by_reviewer: {
-        reviewer: reviewer.trim(),
-        ...page,
-      },
-    };
+    if (!reviewer.trim()) throw new Error("訪問者を選択してください。");
+    return { reviews_by_reviewer: { reviewer: reviewer.trim(), ...page } };
   };
 
   const load = async () => {
@@ -117,8 +169,8 @@ export default function ReviewList() {
       }
       const query = buildQuery();
       const r = await API.smart(query);
-      const reviews = latestReviews(unwrapReviews(r));
-      setRows(reviews);
+      const nextReviews = latestReviews(unwrapReviews(r), Number(limit) || 10);
+      setRows(nextReviews);
       setOut(pretty({ query, response: r }));
     } catch (e) {
       const message = String(e?.message || e);
@@ -130,7 +182,7 @@ export default function ReviewList() {
   };
 
   const loadNext = async () => {
-    if (!lastReviewId) return;
+    if (!lastReviewId || mode === "latest") return;
     setStartAfter(lastReviewId);
     setBusy(true);
     setError("");
@@ -143,8 +195,8 @@ export default function ReviewList() {
         ? { reviews_by_store: { store_id: Number(storeId), ...page } }
         : { reviews_by_reviewer: { reviewer: reviewer.trim(), ...page } };
       const r = await API.smart(query);
-      const reviews = latestReviews(unwrapReviews(r));
-      setRows(reviews);
+      const nextReviews = latestReviews(unwrapReviews(r), Number(limit) || 10);
+      setRows(nextReviews);
       setOut(pretty({ query, response: r }));
     } catch (e) {
       const message = String(e?.message || e);
@@ -208,8 +260,15 @@ export default function ReviewList() {
   };
 
   return (
-    <div className="page">
-      <h2>口コミ一覧</h2>
+    <div className="review-list-page review-discovery-page">
+      <section className="review-list-hero">
+        <div>
+          <span className="review-kicker">Review Search</span>
+          <h1>口コミを探す</h1>
+          <p>最新10件を起点に、店舗名・ジャンル・エリア・評価・訪問者で絞り込めます。</p>
+        </div>
+        <NavLink to="/reviews/create">口コミを書く</NavLink>
+      </section>
 
       {error ? (
         <div className="error-box">
@@ -218,47 +277,58 @@ export default function ReviewList() {
         </div>
       ) : null}
 
-      <div className="review-list-default-note">
-        <strong>最新の口コミから10件を表示</strong>
-        <span>条件を選ぶと、店舗別またはレビュアー別に検索できます。</span>
-      </div>
+      <section className="review-search-panel review-search-panel-wide">
+        <input
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+          placeholder="店名・本文・エリア・レビュアーで検索"
+        />
+        <select value={storeId} onChange={(e) => {
+          setStoreId(e.target.value);
+          if (e.target.value) setMode("store");
+        }}>
+          <option value="">すべての店舗</option>
+          {stores.map((store) => (
+            <option key={store.id} value={store.id}>{storeLabel(store)}</option>
+          ))}
+        </select>
+        <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <option value="">すべてのジャンル</option>
+          {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        <select value={area} onChange={(e) => setArea(e.target.value)}>
+          <option value="">すべてのエリア</option>
+          {areas.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        <select value={ratingFilter} onChange={(e) => setRatingFilter(e.target.value)}>
+          <option value="">すべての評価</option>
+          {RATING_OPTIONS.map((value) => (
+            <option key={value} value={value}>★{value}</option>
+          ))}
+        </select>
+        <select value={reviewer} onChange={(e) => {
+          setReviewer(e.target.value);
+          if (e.target.value) setMode("reviewer");
+        }}>
+          <option value="">すべての訪問者</option>
+          {reviewers.map((addr) => (
+            <option key={addr} value={addr}>{shortAddress(addr)}</option>
+          ))}
+        </select>
+      </section>
 
-      <div className="review-filter-grid">
+      <section className="review-filter-strip">
         <label>
-          検索条件
+          検索モード
           <select value={mode} onChange={(e) => setMode(e.target.value)}>
-            <option value="latest">検索しない（最新10件）</option>
-            <option value="store">店舗で検索</option>
-            <option value="reviewer">レビュアーで検索</option>
+            <option value="latest">最新10件</option>
+            <option value="store">店舗別に取得</option>
+            <option value="reviewer">訪問者別に取得</option>
           </select>
         </label>
 
-        {mode === "latest" ? null : mode === "store" ? (
-          <label>
-            店舗
-            <select value={storeId} onChange={(e) => setStoreId(e.target.value)}>
-              <option value="">店舗を選択</option>
-              {stores.map((store) => (
-                <option key={store.id} value={store.id}>{storeLabel(store)}</option>
-              ))}
-            </select>
-          </label>
-        ) : (
-          <label>
-            レビュアー
-            <select value={reviewer} onChange={(e) => setReviewer(e.target.value)}>
-              <option value="">レビュアーを選択</option>
-              {reviewers.map((addr) => (
-                <option key={addr} value={addr}>{addr}</option>
-              ))}
-            </select>
-          </label>
-        )}
-
         {mode === "latest" ? (
-          <div className="review-list-note">
-            現在は最新10件を表示しています。
-          </div>
+          <div className="review-list-note">最新口コミから10件を表示しています。</div>
         ) : (
           <>
             <label>
@@ -272,7 +342,7 @@ export default function ReviewList() {
             </label>
 
             <label>
-              limit
+              表示件数
               <select value={limit} onChange={(e) => setLimit(e.target.value)}>
                 {LIMIT_OPTIONS.map((value) => (
                   <option key={value} value={value}>{value}件</option>
@@ -281,9 +351,9 @@ export default function ReviewList() {
             </label>
           </>
         )}
-      </div>
+      </section>
 
-      <div className="toolbar">
+      <div className="review-mobile-actions">
         <button className="btn" disabled={busy} onClick={load}>
           {mode === "latest" ? "最新10件を再表示" : "検索"}
         </button>
@@ -291,7 +361,59 @@ export default function ReviewList() {
         <button className="btn secondary" disabled={optionsBusy} onClick={reload}>候補を再読込</button>
       </div>
 
-      <div className="card" style={{ margin: "12px 0" }}>
+      <section className="review-results-head">
+        <div>
+          <strong>{visibleRows.length}</strong>
+          <span>件の口コミ</span>
+        </div>
+        <span>{mode === "latest" ? "最新10件をデフォルト表示" : "検索結果"}</span>
+      </section>
+
+      {visibleRows.length ? (
+        <div className="review-feed-list">
+          {visibleRows.map((r) => {
+            const store = storeMap.get(Number(r.store_id));
+            return (
+              <article className="review-feed-card" key={r.id}>
+                <div className="review-feed-score">
+                  <strong>{r.rating || "-"}</strong>
+                  <Stars value={r.rating} />
+                </div>
+                <div className="review-feed-main">
+                  <div className="review-feed-head">
+                    <div>
+                      <NavLink to={`/stores/${r.store_id}`} className="review-feed-store">
+                        {store?.name || store?.store_ref || `Store #${r.store_id}`}
+                      </NavLink>
+                      <h2>{r.title || "タイトルなし"}</h2>
+                    </div>
+                    <span>{formatTime(r.created_at)}</span>
+                  </div>
+                  {r.body ? <p>{r.body}</p> : null}
+                  <div className="review-result-meta">
+                    <span>{store?.category || "ジャンル未設定"}</span>
+                    <span>{store?.address || "エリア未設定"}</span>
+                    <span>訪問者 {shortAddress(r.reviewer)}</span>
+                    <span>Review #{r.id}</span>
+                  </div>
+                  <div className="review-card-actions">
+                    <NavLink to={`/stores/${r.store_id}`}>店舗詳細</NavLink>
+                    <button className="btn secondary" disabled={busy} onClick={() => pickReview(r)}>編集対象にする</button>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="review-empty">
+          <strong>条件に合う口コミがありません。</strong>
+          <span>キーワードや評価条件を変えて検索してください。</span>
+        </div>
+      )}
+
+      <details className="card review-management-panel">
+        <summary>口コミの編集・非表示</summary>
         <h3>口コミの編集・非表示</h3>
         <div className="review-filter-grid">
           <label>
@@ -325,44 +447,12 @@ export default function ReviewList() {
           <button className="btn" disabled={busy || !edit.reviewId} onClick={editReview}>口コミを更新</button>
           <button className="btn warn" disabled={busy || !edit.reviewId} onClick={() => hideReview()}>非表示にする</button>
         </div>
-      </div>
+      </details>
 
-      <table className="data">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>店舗</th>
-            <th>レビュアー</th>
-            <th>評価</th>
-            <th>title</th>
-            <th>公開状態</th>
-            <th>投稿日</th>
-            <th>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <tr><td colSpan="8" className="muted">データなし</td></tr>
-          ) : rows.map((r) => (
-            <tr key={r.id}>
-              <td>{r.id}</td>
-              <td>{r.store_id}</td>
-              <td className="break-all">{r.reviewer}</td>
-              <td>{r.rating}</td>
-              <td>{r.title || ""}</td>
-              <td>{String(Boolean(r.hidden))}</td>
-              <td>{formatTime(r.created_at)}</td>
-              <td className="row" style={{ gap: 8 }}>
-                <button className="btn secondary" disabled={busy} onClick={() => pickReview(r)}>選択</button>
-                <button className="btn warn" disabled={busy || r.hidden} onClick={() => hideReview(r.id)}>非表示</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h3>詳細データ</h3>
-      <pre className="out">{out}</pre>
+      <details className="review-raw">
+        <summary>詳細データ</summary>
+        <pre className="out">{out}</pre>
+      </details>
     </div>
   );
 }

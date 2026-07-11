@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { API } from "../../api.js";
+import { NavLink } from "react-router-dom";
+import { API, getAdminApiToken, setAdminApiToken } from "../../api.js";
 import {
   adminWalletAdvice,
   connectInjectiveKeplr,
@@ -86,6 +87,20 @@ function authLabel({ contract, current, walletAddress }) {
   return sameAddress(walletAddress, current.admin) ? "admin 認証済み" : "admin 不一致";
 }
 
+function formatTime(value) {
+  if (value == null || value === "") return "";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return String(value);
+  const ms = n > 10_000_000_000 ? n / 1_000_000 : n * 1000;
+  return new Date(ms).toLocaleString("ja-JP");
+}
+
+function shortAddress(addr) {
+  const value = String(addr || "");
+  if (value.length <= 18) return value || "未設定";
+  return `${value.slice(0, 10)}...${value.slice(-6)}`;
+}
+
 export default function AdminPage() {
   const [contract, setContract] = useState("");
   const [chainId, setChainId] = useState("");
@@ -133,6 +148,19 @@ export default function AdminPage() {
     storeId: "",
     codes: "",
   });
+  const [reviewOps, setReviewOps] = useState({
+    rows: [],
+    reviewId: "",
+    rating: "",
+    title: "",
+    body: "",
+  });
+  const [visitOps, setVisitOps] = useState({
+    storeId: "",
+    visitor: "",
+    rows: [],
+    visitId: "",
+  });
   const [wallet, setWallet] = useState({
     connected: false,
     address: "",
@@ -142,6 +170,8 @@ export default function AdminPage() {
   const [out, setOut] = useState("");
   const [error, setError] = useState("");
   const [advice, setAdvice] = useState("");
+  const [activeTab, setActiveTab] = useState("settings");
+  const [adminApiToken, setAdminApiTokenState] = useState(() => getAdminApiToken());
 
   const walletIsAdmin = useMemo(
     () => Boolean(current?.admin && wallet.address && sameAddress(wallet.address, current.admin)),
@@ -149,6 +179,16 @@ export default function AdminPage() {
   );
 
   const canAdminExecute = Boolean(contract && wallet.connected && walletIsAdmin);
+  const hasAdminApiToken = Boolean(adminApiToken.trim());
+  const adminTabs = [
+    { id: "settings", label: "設定変更" },
+    { id: "stores", label: "店舗編集" },
+    { id: "codes", label: "登録コード" },
+    { id: "qr", label: "来店QR" },
+    { id: "reviews", label: "口コミ管理" },
+    { id: "visits", label: "来店管理" },
+    { id: "result", label: "実行結果" },
+  ];
   const statusText = authLabel({ contract, current, walletAddress: wallet.address });
   const statusClass = walletIsAdmin ? "ok" : wallet.address ? "warn" : "idle";
   const adminGateTitle = walletIsAdmin
@@ -165,6 +205,11 @@ export default function AdminPage() {
     () => stores.find((store) => Number(store.id) === Number(storeEdit.storeId)) || null,
     [stores, storeEdit.storeId]
   );
+  const filteredVisits = useMemo(() => {
+    const visitor = visitOps.visitor.trim().toLowerCase();
+    if (!visitor) return visitOps.rows;
+    return visitOps.rows.filter((visit) => String(visit.visitor || "").toLowerCase().includes(visitor));
+  }, [visitOps.rows, visitOps.visitor]);
   const configRows = useMemo(() => {
     const rows = [
       { key: "admin", label: "admin", before: current?.admin, after: form.admin },
@@ -226,6 +271,11 @@ export default function AdminPage() {
     if (!contract) throw new Error("contract is empty");
     if (!wallet.connected) throw new Error("Keplr not connected");
     if (!walletIsAdmin) throw new Error("wallet is not current admin");
+  }
+
+  function persistAdminApiToken(nextToken = adminApiToken) {
+    setAdminApiToken(nextToken);
+    setAdminApiTokenState(nextToken);
   }
 
   const load = async ({ preserveOut = false } = {}) => {
@@ -395,7 +445,7 @@ export default function AdminPage() {
       },
     }).catch(() => null);
     if (!tx) return;
-    const meta = await API.saveStoreRegistrationMetadata([entry]);
+    const meta = await API.saveStoreRegistrationMetadata([entry], adminApiToken);
     setOut(pretty({ step: "provision_store_registration_codes", tx, metadata: meta }));
     setRegistrationCodeOps({
       code: randomRegistrationCode(),
@@ -420,6 +470,78 @@ export default function AdminPage() {
         commits,
       },
     }).catch(() => {});
+  };
+
+  const loadAdminReviews = async () => {
+    setError("");
+    setAdvice("");
+    setBusy(true);
+    try {
+      const resp = await API.latestReviews(20, contract || undefined);
+      setReviewOps((s) => ({ ...s, rows: resp?.reviews || [] }));
+      setOut(pretty({ step: "latest_reviews", response: resp }));
+    } catch (e) {
+      setFailure(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pickAdminReview = (review) => {
+    setReviewOps((s) => ({
+      ...s,
+      reviewId: String(review.id || ""),
+      rating: String(review.rating || ""),
+      title: review.title || "",
+      body: review.body || "",
+    }));
+  };
+
+  const editAdminReview = async () => {
+    await executeAdminMsg("edit_review", {
+      edit_review: {
+        review_id: Number(reviewOps.reviewId),
+        rating: reviewOps.rating === "" ? null : Number(reviewOps.rating),
+        title: reviewOps.title === "" ? null : reviewOps.title,
+        body: reviewOps.body === "" ? null : reviewOps.body,
+      },
+    }).then(loadAdminReviews).catch(() => {});
+  };
+
+  const hideAdminReview = async (reviewId = reviewOps.reviewId) => {
+    await executeAdminMsg("hide_review", {
+      hide_review: { review_id: Number(reviewId) },
+    }).then(loadAdminReviews).catch(() => {});
+  };
+
+  const loadAdminVisits = async () => {
+    setError("");
+    setAdvice("");
+    setBusy(true);
+    try {
+      if (!visitOps.storeId) throw new Error("店舗を選択してください。");
+      const resp = await API.smart({
+        visits_by_store: {
+          store_id: Number(visitOps.storeId),
+          start_after: null,
+          limit: 100,
+        },
+      }, contract || undefined);
+      const data = unwrapSmart(resp);
+      const rows = data?.visits || [];
+      setVisitOps((s) => ({ ...s, rows }));
+      setOut(pretty({ step: "visits_by_store", response: resp }));
+    } catch (e) {
+      setFailure(e);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const revokeAdminVisit = async (visitId = visitOps.visitId) => {
+    await executeAdminMsg("revoke_visit", {
+      revoke_visit: { visit_id: Number(visitId) },
+    }).then(loadAdminVisits).catch(() => {});
   };
 
   return (
@@ -474,6 +596,16 @@ export default function AdminPage() {
 
         <div className="admin-inline-fields">
           <label>
+            admin API token（セッション保存）
+            <input
+              type="password"
+              value={adminApiToken}
+              onChange={(e) => setAdminApiTokenState(e.target.value)}
+              onBlur={() => persistAdminApiToken()}
+              placeholder="サーバーの ADMIN_API_TOKEN"
+            />
+          </label>
+          <label>
             fee
             <select value={defaultFees} onChange={(e) => setDefaultFees(e.target.value)}>
               <option value="1000000000000000inj">0.001 INJ</option>
@@ -496,6 +628,20 @@ export default function AdminPage() {
             chainId
             <input value={chainId} onChange={(e) => setChainId(e.target.value)} />
           </label>
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={() => persistAdminApiToken()}
+          >
+            token保存
+          </button>
+          <button
+            className="btn secondary"
+            type="button"
+            onClick={() => persistAdminApiToken("")}
+          >
+            token削除
+          </button>
         </div>
       </section>
 
@@ -530,7 +676,21 @@ export default function AdminPage() {
         </section>
       ) : (
         <>
-      <section className="admin-grid">
+      <nav className="admin-tabs" aria-label="管理機能">
+        {adminTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            className={activeTab === tab.id ? "active" : ""}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <section className="admin-tab-content">
+        {activeTab === "settings" ? (
         <div className="admin-panel">
           <div className="home-section-head">
             <span>Review Policy</span>
@@ -634,11 +794,13 @@ export default function AdminPage() {
             {!canAdminExecute ? <span className="admin-meta">admin wallet 接続後に実行できます。</span> : null}
           </div>
         </div>
+        ) : null}
 
+        {activeTab === "stores" ? (
         <div className="admin-panel">
           <div className="home-section-head">
             <span>Store Operations</span>
-            <h2>店舗とQR管理</h2>
+            <h2>店舗編集</h2>
           </div>
 
           <label>店舗</label>
@@ -745,7 +907,21 @@ export default function AdminPage() {
           <div className="admin-actions">
             <button className="btn" disabled={busy || !canAdminExecute || !storeEdit.storeId} onClick={updateStoreProfile}>店舗プロフィールを保存</button>
           </div>
+        </div>
+        ) : null}
 
+        {activeTab === "codes" ? (
+        <div className="admin-panel">
+          <div className="home-section-head">
+            <span>Registration Code</span>
+            <h2>店舗登録コード</h2>
+          </div>
+          {!hasAdminApiToken ? (
+            <div className="error-box">
+              <strong>admin API token が必要です</strong>
+              <p>登録コードのオンチェーン発行後、サーバー側メタ情報を保存するために token を入力してください。</p>
+            </div>
+          ) : null}
           <h3>店舗登録コード発行</h3>
           <div className="admin-registration-code-grid">
             <label>
@@ -789,6 +965,7 @@ export default function AdminPage() {
               disabled={
                 busy ||
                 !canAdminExecute ||
+                !hasAdminApiToken ||
                 !registrationCodeOps.code.trim() ||
                 !registrationCodeOps.storeRef.trim() ||
                 !registrationCodeOps.name.trim()
@@ -798,7 +975,15 @@ export default function AdminPage() {
               登録コードを発行
             </button>
           </div>
+        </div>
+        ) : null}
 
+        {activeTab === "qr" ? (
+        <div className="admin-panel">
+          <div className="home-section-head">
+            <span>Visit QR</span>
+            <h2>来店QR登録</h2>
+          </div>
           <h3>来店QRコード登録</h3>
           <label>店舗</label>
           <select value={qrOps.storeId} onChange={(e) => setQrOps((s) => ({ ...s, storeId: e.target.value }))}>
@@ -811,14 +996,144 @@ export default function AdminPage() {
           <textarea value={qrOps.codes} onChange={(e) => setQrOps((s) => ({ ...s, codes: e.target.value }))} />
           <div className="admin-actions">
             <button className="btn secondary" disabled={busy || !canAdminExecute || !qrOps.storeId || !qrOps.codes.trim()} onClick={provisionQrCommits}>来店QRを登録</button>
+            {qrOps.storeId ? (
+              <NavLink className="btn ghost" to={`/stores/${qrOps.storeId}/qr`}>
+                掲示用QRページを開く
+              </NavLink>
+            ) : null}
+          </div>
+        </div>
+        ) : null}
+
+        {activeTab === "reviews" ? (
+        <div className="admin-panel">
+          <div className="home-section-head">
+            <span>Review Operations</span>
+            <h2>口コミ管理</h2>
+          </div>
+          <p className="admin-meta">
+            最新口コミを読み込み、対象レビューを選択して編集または非表示にできます。
+          </p>
+          <div className="admin-actions">
+            <button className="btn secondary" disabled={busy} onClick={loadAdminReviews}>最新口コミを読み込む</button>
           </div>
 
+          <div className="admin-review-list">
+            {reviewOps.rows.map((review) => (
+              <button
+                type="button"
+                className={String(reviewOps.reviewId) === String(review.id) ? "admin-review-row selected" : "admin-review-row"}
+                key={review.id}
+                onClick={() => pickAdminReview(review)}
+              >
+                <span>#{review.id} / ★{review.rating}</span>
+                <strong>{review.title || "タイトルなし"}</strong>
+                <small>{review.store?.name || `Store #${review.store_id}`} / {shortAddress(review.reviewer)} / {formatTime(review.created_at)}</small>
+              </button>
+            ))}
+            {reviewOps.rows.length === 0 ? <p className="admin-meta">まだ読み込まれていません。</p> : null}
+          </div>
+
+          <div className="admin-two-col">
+            <div>
+              <label>review_id</label>
+              <input value={reviewOps.reviewId} onChange={(e) => setReviewOps((s) => ({ ...s, reviewId: e.target.value }))} />
+            </div>
+            <div>
+              <label>rating</label>
+              <select value={reviewOps.rating} onChange={(e) => setReviewOps((s) => ({ ...s, rating: e.target.value }))}>
+                <option value="">変更なし</option>
+                <option value="5">★5</option>
+                <option value="4">★4</option>
+                <option value="3">★3</option>
+                <option value="2">★2</option>
+                <option value="1">★1</option>
+              </select>
+            </div>
+          </div>
+          <label>title</label>
+          <input value={reviewOps.title} onChange={(e) => setReviewOps((s) => ({ ...s, title: e.target.value }))} />
+          <label>body</label>
+          <textarea value={reviewOps.body} onChange={(e) => setReviewOps((s) => ({ ...s, body: e.target.value }))} />
+          <div className="admin-actions">
+            <button className="btn" disabled={busy || !canAdminExecute || !reviewOps.reviewId} onClick={editAdminReview}>口コミを更新</button>
+            <button className="btn warn" disabled={busy || !canAdminExecute || !reviewOps.reviewId} onClick={() => hideAdminReview()}>非表示にする</button>
+          </div>
+
+          <div className="admin-shortcut-grid">
+            <NavLink to="/reviews/list">口コミ一覧を開く</NavLink>
+            <NavLink to="/reviews/create">口コミ投稿画面を開く</NavLink>
+          </div>
+        </div>
+        ) : null}
+
+        {activeTab === "visits" ? (
+        <div className="admin-panel">
+          <div className="home-section-head">
+            <span>Visit Operations</span>
+            <h2>来店管理</h2>
+          </div>
+          <p className="admin-meta">
+            店舗別の来店履歴を読み込み、visitorで絞り込み、必要に応じて来店を取り消せます。
+          </p>
+          <label>店舗</label>
+          <select value={visitOps.storeId} onChange={(e) => setVisitOps((s) => ({ ...s, storeId: e.target.value }))}>
+            <option value="">店舗を選択</option>
+            {stores.map((store) => (
+              <option key={store.id} value={store.id}>{storeLabel(store)}</option>
+            ))}
+          </select>
+          <div className="admin-two-col">
+            <div>
+              <label>visitor filter</label>
+              <input value={visitOps.visitor} onChange={(e) => setVisitOps((s) => ({ ...s, visitor: e.target.value }))} placeholder="inj..." />
+            </div>
+            <div>
+              <label>visit_id</label>
+              <input value={visitOps.visitId} onChange={(e) => setVisitOps((s) => ({ ...s, visitId: e.target.value }))} />
+            </div>
+          </div>
+          <div className="admin-actions">
+            <button className="btn secondary" disabled={busy || !visitOps.storeId} onClick={loadAdminVisits}>来店を読み込む</button>
+            <button className="btn warn" disabled={busy || !canAdminExecute || !visitOps.visitId} onClick={() => revokeAdminVisit()}>来店を取り消す</button>
+          </div>
+
+          <div className="admin-review-list">
+            {filteredVisits.map((visit) => (
+              <button
+                type="button"
+                className={String(visitOps.visitId) === String(visit.id) ? "admin-review-row selected" : "admin-review-row"}
+                key={visit.id}
+                onClick={() => setVisitOps((s) => ({ ...s, visitId: String(visit.id || "") }))}
+              >
+                <span>Visit #{visit.id} / Store #{visit.store_id}</span>
+                <strong>{visit.revoked ? "取り消し済み" : visit.reviewed ? "レビュー済み" : "レビュー待ち"}</strong>
+                <small>{shortAddress(visit.visitor)} / {visit.memo || "memoなし"} / {formatTime(visit.created_at)}</small>
+              </button>
+            ))}
+            {filteredVisits.length === 0 ? <p className="admin-meta">来店データがありません。</p> : null}
+          </div>
+
+          <div className="admin-shortcut-grid">
+            <NavLink to="/visits/list">来店履歴を開く</NavLink>
+            <NavLink to="/visits/record">来店QR記録を開く</NavLink>
+          </div>
+        </div>
+        ) : null}
+
+        {activeTab === "result" ? (
+        <div className="admin-panel">
+          <div className="home-section-head">
+            <span>Current Config</span>
+            <h2>現在のサービス設定</h2>
+          </div>
           <h3>現在のサービス設定</h3>
           <pre className="out">{pretty(current || {})}</pre>
         </div>
+        ) : null}
       </section>
 
-      <section className="admin-panel">
+      <section className="admin-panel admin-result-panel">
         <div className="home-section-head">
           <span>Result</span>
           <h2>実行結果</h2>

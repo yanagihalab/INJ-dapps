@@ -19,6 +19,36 @@ async function _request(path, init = {}) {
 // shorthand
 const GET = (p) => _request(p, { method: "GET" });
 const POST = (p, body = {}) => _request(p, { method: "POST", body: JSON.stringify(body) });
+const ADMIN_TOKEN_STORAGE_KEY = "injReviews.adminApiToken";
+
+function adminHeaders(token) {
+  const value = String(token || "").trim();
+  return value ? { "X-Admin-Api-Key": value } : {};
+}
+
+export function getAdminApiToken() {
+  try {
+    return sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+
+export function setAdminApiToken(token) {
+  try {
+    const value = String(token || "").trim();
+    if (value) sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, value);
+    else sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+    localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {}
+}
+
+const ADMIN_POST = (p, body = {}, token = getAdminApiToken()) =>
+  _request(p, {
+    method: "POST",
+    headers: adminHeaders(token),
+    body: JSON.stringify(body),
+  });
 
 function normalizeExecuteArgs(input = {}, opts = {}) {
   if (input && typeof input === "object" && Object.prototype.hasOwnProperty.call(input, "msg")) {
@@ -45,9 +75,9 @@ export const API = {
   health: () => GET("/health"),
   getConfig: () => GET("/config"),
   config: () => GET("/config"), // 互換
-  saveConfig: (cfg) => POST("/config", cfg),
-  saveStoreRegistrationMetadata: (entries = []) =>
-    POST("/store-registration/metadata", { entries }),
+  saveConfig: (cfg, adminToken) => ADMIN_POST("/config", cfg, adminToken),
+  saveStoreRegistrationMetadata: (entries = [], adminToken) =>
+    ADMIN_POST("/store-registration/metadata", { entries }, adminToken),
   resolveStoreRegistration: (authCode) =>
     POST("/store-registration/resolve", { auth_code: authCode }),
 
@@ -110,27 +140,34 @@ export const API = {
       ...(contract ? { contract } : {}),
     }),
 
+  latestReviews: (limit = 10, contract) => {
+    const qs = new URLSearchParams();
+    qs.set("limit", String(Number(limit) || 10));
+    if (contract) qs.set("contract", contract);
+    return GET(`/reviews/latest?${qs.toString()}`);
+  },
+
   // ---- keys (local keyring helpers) ----------------------------------------
   keysList: () => GET("/keys/list"),
   keyShow: (name) => GET(`/keys/show?name=${encodeURIComponent(name || "")}`),
   keysAdd: ({ name, overwrite = false, setCurrent = false }) =>
     POST("/keys/add", { name, overwrite, setCurrent }),
-  setCurrent: ({ keyname, myAddr }) =>
-    POST("/config", { keyname, myAddr }),
+  setCurrent: ({ keyname, myAddr }, adminToken) =>
+    ADMIN_POST("/config", { keyname, myAddr }, adminToken),
 
   // ---- accounts (app password; /api/accounts/*) ----------------------------
   // name / address のどちらでも指定可（address 優先）
   authStatus: (input = {}) => GET(`/accounts/password_status?${identityQuery(input)}`),
-  authSetPassword: ({ address, name, password, hint } = {}) =>
-    POST("/accounts/set_password", { address, name, password, hint }),
+  authSetPassword: ({ address, name, password, hint, adminToken } = {}) =>
+    ADMIN_POST("/accounts/set_password", { address, name, password, hint }, adminToken),
   authVerifyPassword: ({ address, name, password } = {}) =>
     POST("/accounts/verify_password", { address, name, password }),
 
   // ---- 旧名互換 -------------------------------------------------------------
   accounts: {
     passwordStatus: (input = {}) => GET(`/accounts/password_status?${identityQuery(input)}`),
-    setPassword: ({ address, name, password, hint } = {}) =>
-      POST("/accounts/set_password", { address, name, password, hint }),
+    setPassword: ({ address, name, password, hint, adminToken } = {}) =>
+      ADMIN_POST("/accounts/set_password", { address, name, password, hint }, adminToken),
     verifyPassword: ({ address, name, password } = {}) =>
       POST("/accounts/verify_password", { address, name, password }),
   },

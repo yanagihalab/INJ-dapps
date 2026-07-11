@@ -68,19 +68,25 @@ export function useChainOptions() {
       const visitRows = (await Promise.all(visitBatches)).flatMap((resp) => unwrap(resp, "visits"));
       setVisits(uniqById(visitRows));
 
-      const reviewBatches = [];
-      if (c?.myAddr) {
-        reviewBatches.push(API.smart({
-          reviews_by_reviewer: { reviewer: c.myAddr, start_after: null, limit: 100 },
-        }).catch(() => null));
+      const latestResp = await API.latestReviews(100).catch(() => null);
+      const latestRows = latestResp?.reviews || [];
+      if (latestRows.length) {
+        setReviews(uniqById(latestRows));
+      } else {
+        const reviewBatches = [];
+        if (c?.myAddr) {
+          reviewBatches.push(API.smart({
+            reviews_by_reviewer: { reviewer: c.myAddr, start_after: null, limit: 100 },
+          }).catch(() => null));
+        }
+        for (const store of storeRows.slice(0, 20)) {
+          reviewBatches.push(API.smart({
+            reviews_by_store: { store_id: Number(store.id), start_after: null, limit: 100 },
+          }).catch(() => null));
+        }
+        const reviewRows = (await Promise.all(reviewBatches)).flatMap((resp) => unwrap(resp, "reviews"));
+        setReviews(uniqById(reviewRows));
       }
-      for (const store of storeRows.slice(0, 20)) {
-        reviewBatches.push(API.smart({
-          reviews_by_store: { store_id: Number(store.id), start_after: null, limit: 100 },
-        }).catch(() => null));
-      }
-      const reviewRows = (await Promise.all(reviewBatches)).flatMap((resp) => unwrap(resp, "reviews"));
-      setReviews(uniqById(reviewRows));
     } finally {
       setBusy(false);
     }
