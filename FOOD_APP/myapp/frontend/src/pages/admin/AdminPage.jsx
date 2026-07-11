@@ -26,6 +26,17 @@ function unwrapSmart(resp) {
   return resp?.json?.data ?? resp?.data ?? resp?.json ?? resp;
 }
 
+function auditTargetFromMsg(msg) {
+  const key = Object.keys(msg || {})[0] || "";
+  const body = msg?.[key] || {};
+  return {
+    type: key,
+    store_id: body.store_id ?? null,
+    review_id: body.review_id ?? null,
+    visit_id: body.visit_id ?? null,
+  };
+}
+
 function numberOrNull(value) {
   const text = String(value ?? "").trim();
   return text === "" ? null : Number(text);
@@ -358,6 +369,12 @@ export default function AdminPage() {
         fee: defaultFees,
         gasLimit,
       });
+      await API.adminAudit({
+        actor: wallet.address,
+        action: label,
+        txhash: resp?.txhash || resp?.hash || "",
+        target: auditTargetFromMsg(msg),
+      }, adminApiToken).catch(() => null);
       setOut(pretty({ step: label, ok: true, ...resp }));
       await load({ preserveOut: true });
       return resp;

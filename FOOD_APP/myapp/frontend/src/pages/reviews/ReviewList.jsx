@@ -71,6 +71,7 @@ export default function ReviewList() {
   const [ratingFilter, setRatingFilter] = useState("");
   const [reviewer, setReviewer] = useState("");
   const [startAfter, setStartAfter] = useState("");
+  const [latestCursor, setLatestCursor] = useState("");
   const [limit, setLimit] = useState("10");
   const [rows, setRows] = useState([]);
   const [out, setOut] = useState("");
@@ -82,7 +83,7 @@ export default function ReviewList() {
     title: "",
     body: "",
   });
-  const { stores, reviews, reviewers, busy: optionsBusy, reload } = useChainOptions();
+  const { stores, reviews, reviewers, cfg, busy: optionsBusy, reload } = useChainOptions();
 
   const storeMap = useMemo(
     () => new Map(stores.map((store) => [Number(store.id), store])),
@@ -112,10 +113,29 @@ export default function ReviewList() {
   }, []);
 
   useEffect(() => {
-    if (mode === "latest") {
-      setRows(latestReviews(reviews));
+    if (mode === "latest") loadLatest();
+  }, [mode, cfg?.contract]);
+
+  const loadLatest = async (cursor = "") => {
+    setBusy(true);
+    setError("");
+    try {
+      const resp = await API.latestReviews(Number(limit) || 10, cfg?.contract || undefined, cursor);
+      const latest = resp?.reviews || [];
+      setRows(latest);
+      setLatestCursor(resp?.next_cursor || "");
+      setOut(pretty({ mode: "latest", response: resp }));
+    } catch (e) {
+      const fallback = latestReviews(reviews, Number(limit) || 10);
+      setRows(fallback);
+      setLatestCursor("");
+      const message = String(e?.message || e);
+      setError(`latest_reviews API fallback: ${message}`);
+      setOut(pretty({ mode: "latest_fallback", error: message, reviews: fallback }));
+    } finally {
+      setBusy(false);
     }
-  }, [mode, reviews]);
+  };
 
   const visibleRows = useMemo(() => {
     const q = keyword.trim().toLowerCase();
@@ -162,9 +182,7 @@ export default function ReviewList() {
     setError("");
     try {
       if (mode === "latest") {
-        const latest = latestReviews(reviews);
-        setRows(latest);
-        setOut(pretty({ mode: "latest", limit: 10, reviews: latest }));
+        await loadLatest("");
         return;
       }
       const query = buildQuery();
@@ -182,7 +200,12 @@ export default function ReviewList() {
   };
 
   const loadNext = async () => {
-    if (!lastReviewId || mode === "latest") return;
+    if (mode === "latest") {
+      if (!latestCursor) return;
+      await loadLatest(latestCursor);
+      return;
+    }
+    if (!lastReviewId) return;
     setStartAfter(lastReviewId);
     setBusy(true);
     setError("");
@@ -357,7 +380,13 @@ export default function ReviewList() {
         <button className="btn" disabled={busy} onClick={load}>
           {mode === "latest" ? "最新10件を再表示" : "検索"}
         </button>
-        <button className="btn secondary" disabled={busy || mode === "latest" || !lastReviewId} onClick={loadNext}>次のページ</button>
+        <button
+          className="btn secondary"
+          disabled={busy || (mode === "latest" ? !latestCursor : !lastReviewId)}
+          onClick={loadNext}
+        >
+          次のページ
+        </button>
         <button className="btn secondary" disabled={optionsBusy} onClick={reload}>候補を再読込</button>
       </div>
 

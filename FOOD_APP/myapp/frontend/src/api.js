@@ -80,6 +80,13 @@ export const API = {
     ADMIN_POST("/store-registration/metadata", { entries }, adminToken),
   resolveStoreRegistration: (authCode) =>
     POST("/store-registration/resolve", { auth_code: authCode }),
+  adminAudit: (entry = {}, adminToken) =>
+    ADMIN_POST("/admin/audit", entry, adminToken),
+  adminAuditList: (limit = 50, adminToken = getAdminApiToken()) =>
+    _request(`/admin/audit?limit=${encodeURIComponent(limit)}`, {
+      method: "GET",
+      headers: adminHeaders(adminToken),
+    }),
 
   // ---- tx / smart / tx query ------------------------------------------------
   execute: (input = {}, opts = {}) => {
@@ -140,10 +147,11 @@ export const API = {
       ...(contract ? { contract } : {}),
     }),
 
-  latestReviews: (limit = 10, contract) => {
+  latestReviews: (limit = 10, contract, cursor = "") => {
     const qs = new URLSearchParams();
     qs.set("limit", String(Number(limit) || 10));
     if (contract) qs.set("contract", contract);
+    if (cursor) qs.set("cursor", cursor);
     return GET(`/reviews/latest?${qs.toString()}`);
   },
 

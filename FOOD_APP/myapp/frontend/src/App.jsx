@@ -1,37 +1,35 @@
 // sudo docker compose build --no-cache
 // frontend/src/App.jsx
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { Routes, Route, NavLink, Navigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import "./index.css";
 import LanguageSwitcher from "./components/prb/LanguageSwitcher.jsx";
 import { useGlobalPageTranslation } from "./lib/pageTranslations.js";
 
 // Pages
-import HomePage from "./pages/HomePage.jsx";
-import Settings from "./pages/Settings.jsx";
-
-import RegisterStore from "./pages/stores/RegisterStore.jsx";
-import StoreList from "./pages/stores/StoreList.jsx";
-import StoreDetail from "./pages/stores/StoreDetail.jsx";
-import StoreQrPage from "./pages/stores/StoreQrPage.jsx";
-
-import RecordVisit from "./pages/visits/RecordVisit.jsx";
-import VisitList from "./pages/visits/VisitList.jsx";
-
-import CreateReview from "./pages/reviews/CreateReview.jsx";
-import TipReview from "./pages/reviews/TipReview.jsx";
-import TipsSummary from "./pages/reviews/TipsSummary.jsx";
-import ReviewList from "./pages/reviews/ReviewList.jsx";
-
-import AdminPage from "./pages/admin/AdminPage.jsx";
-import Withdraw from "./pages/admin/Withdraw.jsx";
+const HomePage = lazy(() => import("./pages/HomePage.jsx"));
+const Settings = lazy(() => import("./pages/Settings.jsx"));
+const RegisterStore = lazy(() => import("./pages/stores/RegisterStore.jsx"));
+const StoreList = lazy(() => import("./pages/stores/StoreList.jsx"));
+const StoreDetail = lazy(() => import("./pages/stores/StoreDetail.jsx"));
+const StoreQrPage = lazy(() => import("./pages/stores/StoreQrPage.jsx"));
+const RecordVisit = lazy(() => import("./pages/visits/RecordVisit.jsx"));
+const VisitList = lazy(() => import("./pages/visits/VisitList.jsx"));
+const CreateReview = lazy(() => import("./pages/reviews/CreateReview.jsx"));
+const TipReview = lazy(() => import("./pages/reviews/TipReview.jsx"));
+const TipsSummary = lazy(() => import("./pages/reviews/TipsSummary.jsx"));
+const ReviewList = lazy(() => import("./pages/reviews/ReviewList.jsx"));
+const AdminPage = lazy(() => import("./pages/admin/AdminPage.jsx"));
+const Withdraw = lazy(() => import("./pages/admin/Withdraw.jsx"));
 
 // アカウント関連
-import AccountManager from "./pages/accounts/AccountManager.jsx";
-import KeyLogin from "./pages/accounts/KeyLogin.jsx";
+const AccountManager = lazy(() => import("./pages/accounts/AccountManager.jsx"));
+const KeyLogin = lazy(() => import("./pages/accounts/KeyLogin.jsx"));
 
 export default function App() {
   useGlobalPageTranslation();
+  const { t } = useTranslation();
 
   return (
     <>
@@ -40,24 +38,25 @@ export default function App() {
           <span className="brand-mark">IR</span>
           <span>
             INJ Reviews
-            <small>Verified restaurant guide</small>
+            <small>{t("app.subtitle")}</small>
           </span>
         </NavLink>
         <nav>
-          <NavLink to="/">探す</NavLink>
-          <NavLink to="/stores/list">店舗一覧</NavLink>
-          <NavLink to="/visits/record">来店QR</NavLink>
-          <NavLink to="/reviews/create">レビュー投稿</NavLink>
-          <NavLink to="/reviews/list">口コミ</NavLink>
-          <NavLink to="/stores/register">店舗登録</NavLink>
+          <NavLink to="/">{t("nav.search")}</NavLink>
+          <NavLink to="/stores/list">{t("nav.stores")}</NavLink>
+          <NavLink to="/visits/record">{t("nav.visitQr")}</NavLink>
+          <NavLink to="/reviews/create">{t("nav.writeReview")}</NavLink>
+          <NavLink to="/reviews/list">{t("nav.reviews")}</NavLink>
+          <NavLink to="/stores/register">{t("nav.registerStore")}</NavLink>
         </nav>
         <NavLink className="appbar-cta" to="/visits/record">
-          QRで来店
+          {t("nav.visitByQr")}
         </NavLink>
         <LanguageSwitcher />
       </header>
 
       <div className="container">
+        <Suspense fallback={<div className="page app-loading">{t("app.loading")}</div>}>
         <Routes>
           <Route path="/" element={<HomePage />} />
 
@@ -88,6 +87,7 @@ export default function App() {
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </Suspense>
       </div>
     </>
   );

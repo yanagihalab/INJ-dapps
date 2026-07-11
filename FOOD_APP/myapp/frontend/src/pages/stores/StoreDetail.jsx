@@ -63,6 +63,9 @@ export default function StoreDetail() {
   const reviewCount = Number(agg?.review_count || reviews.length || 0);
   const payload = useMemo(() => qrPayload(store), [store]);
   const visitUrl = store ? `/visits/record?node_id=${encodeURIComponent(store.store_ref || "")}&store_id=${store.id}` : "/visits/record";
+  const mapUrl = store?.address
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(store.address)}`
+    : "";
 
   const ratingBars = useMemo(() => {
     const counts = new Map();
@@ -146,6 +149,7 @@ export default function StoreDetail() {
                 <NavLink to={visitUrl}>来店QRを読み取る</NavLink>
                 <NavLink to={`/stores/${store.id}/qr`}>掲示QRを作成</NavLink>
                 <NavLink to="/reviews/create">口コミを書く</NavLink>
+                {mapUrl ? <a href={mapUrl} target="_blank" rel="noreferrer">地図で見る</a> : null}
               </div>
             </div>
           </section>
@@ -157,7 +161,10 @@ export default function StoreDetail() {
                 <dt>店舗 node id / store_ref</dt>
                 <dd>{store.store_ref || "未設定"}</dd>
                 <dt>住所</dt>
-                <dd>{store.address || "未設定"}</dd>
+                <dd>
+                  {store.address || "未設定"}
+                  {mapUrl ? <a className="store-map-link" href={mapUrl} target="_blank" rel="noreferrer">地図を開く</a> : null}
+                </dd>
                 <dt>電話番号</dt>
                 <dd>{store.phone || "未設定"}</dd>
                 <dt>Webサイト</dt>

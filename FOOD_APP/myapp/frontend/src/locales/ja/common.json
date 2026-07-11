@@ -1,9 +1,18 @@
 {
   "app": {
     "title": "INJ dApps",
-    "lang": "言語"
+    "subtitle": "認証済み店舗レビュー",
+    "lang": "言語",
+    "loading": "読み込んでいます..."
   },
   "nav": {
-    "home": "ホーム"
+    "home": "ホーム",
+    "search": "探す",
+    "stores": "店舗一覧",
+    "visitQr": "来店QR",
+    "writeReview": "レビュー投稿",
+    "reviews": "口コミ",
+    "registerStore": "店舗登録",
+    "visitByQr": "QRで来店"
   }
 }

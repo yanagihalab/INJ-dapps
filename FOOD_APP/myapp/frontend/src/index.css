@@ -171,6 +171,12 @@ a:hover { text-decoration: underline; text-underline-offset: 3px; }
   padding: 22px;
   box-shadow: var(--shadow-sm);
 }
+.app-loading {
+  min-height: 220px;
+  place-items: center;
+  color: var(--muted);
+  font-weight: 900;
+}
 .page > h2:first-child {
   margin: -22px -22px 2px;
   padding: 28px 28px 24px;
@@ -1375,6 +1381,29 @@ table.data tbody tr:nth-child(odd) {
   background: #ecfdf5;
   color: #047857;
 }
+.visit-next-action {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #fecdd3;
+  border-radius: var(--radius);
+  background: #fff1f2;
+  color: #be123c;
+}
+.visit-next-action.ready {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+.visit-next-action strong {
+  font-size: 14px;
+}
+.visit-next-action span {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.6;
+}
 .visit-record-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, .85fr);
@@ -1599,6 +1628,13 @@ table.data tbody tr:nth-child(odd) {
 .store-info-list dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+.store-map-link {
+  display: inline-flex;
+  margin-left: 8px;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 900;
 }
 .store-hours-card p {
   margin: 0;

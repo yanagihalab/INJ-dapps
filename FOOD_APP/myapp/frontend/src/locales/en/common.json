@@ -1,9 +1,18 @@
 {
   "app": {
     "title": "INJ dApps",
-    "lang": "Language"
+    "subtitle": "Verified restaurant guide",
+    "lang": "Language",
+    "loading": "Loading..."
   },
   "nav": {
-    "home": "Home"
+    "home": "Home",
+    "search": "Search",
+    "stores": "Stores",
+    "visitQr": "Visit QR",
+    "writeReview": "Write Review",
+    "reviews": "Reviews",
+    "registerStore": "Register Store",
+    "visitByQr": "Visit by QR"
   }
 }

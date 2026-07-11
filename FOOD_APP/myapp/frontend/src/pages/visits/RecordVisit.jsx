@@ -428,6 +428,15 @@ export default function RecordVisit() {
         </div>
       </div>
 
+      <div className={`visit-next-action ${storeId && qrCode.trim() ? "ready" : "pending"}`}>
+        <strong>{storeId && qrCode.trim() ? "次の操作: 来店Txを送信" : "次の操作: 店舗QRを読み取る"}</strong>
+        <span>
+          {storeId && qrCode.trim()
+            ? "店舗情報を確認できました。Keplrで署名して来店を記録してください。"
+            : "店舗に掲示されたQRをカメラで読み取ると、店舗確認と送信ボタンが有効になります。"}
+        </span>
+      </div>
+
       <div className="visit-record-layout">
         <section className="card visit-main-card">
           <div className="visit-card-header">

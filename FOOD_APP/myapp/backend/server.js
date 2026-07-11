@@ -61,6 +61,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const AUTH_PATH = path.join(DATA_DIR, "auth_store.json");
 const CONFIG_PATH = path.join(DATA_DIR, "config.json");
 const STORE_REGISTRATION_META_PATH = path.join(DATA_DIR, "store_registration_meta.json");
+const ADMIN_AUDIT_LOG_PATH = path.join(DATA_DIR, "admin_audit_log.json");
 
 function readJsonSafe(p) {
   try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return {}; }
@@ -79,6 +80,29 @@ function loadStoreRegistrationMetaDb() {
 
 function saveStoreRegistrationMetaDb(db) {
   writeJsonSafe(STORE_REGISTRATION_META_PATH, db);
+}
+
+function loadAdminAuditLog() {
+  const db = readJsonSafe(ADMIN_AUDIT_LOG_PATH);
+  db.entries = Array.isArray(db.entries) ? db.entries : [];
+  return db;
+}
+
+function appendAdminAuditLog(entry = {}) {
+  const db = loadAdminAuditLog();
+  const next = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    actor: String(entry.actor || "").trim(),
+    action: String(entry.action || "").trim() || "unknown",
+    txhash: String(entry.txhash || "").trim(),
+    target: entry.target || null,
+    details: entry.details || null,
+  };
+  db.entries.unshift(next);
+  db.entries = db.entries.slice(0, 500);
+  writeJsonSafe(ADMIN_AUDIT_LOG_PATH, db);
+  return next;
 }
 
 function constantTimeEqualString(a, b) {
@@ -445,6 +469,65 @@ function reviewSortValue(review) {
   return Number.isFinite(id) ? id : 0;
 }
 
+function reviewCursor(review) {
+  return `${reviewSortValue(review)}:${Number(review?.id || 0)}`;
+}
+
+function compareReviewDesc(a, b) {
+  const createdDiff = reviewSortValue(b) - reviewSortValue(a);
+  if (createdDiff !== 0) return createdDiff;
+  return Number(b?.id || 0) - Number(a?.id || 0);
+}
+
+async function collectLatestReviews(contract, { pageLimit = 100 } = {}) {
+  const stores = [];
+  let startAfterStore = null;
+  for (let page = 0; page < 20; page += 1) {
+    const resp = await smartQuery(contract, {
+      stores: { start_after: startAfterStore, limit: pageLimit },
+    });
+    const batch = unwrapSmartData(resp)?.stores || [];
+    stores.push(...batch);
+    if (batch.length < pageLimit) break;
+    startAfterStore = Number(batch[batch.length - 1]?.id);
+    if (!startAfterStore) break;
+  }
+
+  const reviews = [];
+  for (const store of stores) {
+    let startAfterReview = null;
+    for (let page = 0; page < 20; page += 1) {
+      const resp = await smartQuery(contract, {
+        reviews_by_store: {
+          store_id: Number(store.id),
+          start_after: startAfterReview,
+          limit: pageLimit,
+        },
+      });
+      const batch = unwrapSmartData(resp)?.reviews || [];
+      for (const review of batch) {
+        reviews.push({
+          ...review,
+          store: {
+            id: store.id,
+            store_ref: store.store_ref,
+            name: store.name,
+            category: store.category,
+            address: store.address,
+            price_range: store.price_range,
+          },
+          cursor: reviewCursor(review),
+        });
+      }
+      if (batch.length < pageLimit) break;
+      startAfterReview = Number(batch[batch.length - 1]?.id);
+      if (!startAfterReview) break;
+    }
+  }
+
+  return { stores, reviews };
+}
+
 async function pollTxAttr(hash, attrNames, { attempts = 12, delayMs = 2500 } = {}) {
   for (let i = 0; i < attempts; i += 1) {
     const tx = await queryTxByHash(hash);
@@ -481,6 +564,11 @@ app.get("/api/config", (_req, res) => res.json({ ...CFG, configPath: CONFIG_PATH
 app.post("/api/config", requireAdminApi, (req, res) => {
   for (const k of CONFIG_KEYS) if (k in req.body) CFG[k] = req.body[k];
   saveConfig(CFG);
+  appendAdminAuditLog({
+    actor: req.get("x-admin-actor") || "admin-api",
+    action: "config.update",
+    details: { keys: CONFIG_KEYS.filter((k) => k in req.body) },
+  });
   res.json({ ok: true, CFG: { ...CFG, configPath: CONFIG_PATH } });
 });
 
@@ -506,10 +594,32 @@ app.post("/api/store-registration/metadata", requireAdminApi, (req, res) => {
       saved.push({ store_ref: storeRef, name });
     }
     saveStoreRegistrationMetaDb(db);
+    appendAdminAuditLog({
+      actor: req.get("x-admin-actor") || "admin-api",
+      action: "store_registration.metadata_save",
+      details: { count: saved.length, stores: saved },
+    });
     res.json({ ok: true, saved });
   } catch (e) {
     res.status(500).json({ error: String(e?.message || e) });
   }
+});
+
+app.get("/api/admin/audit", requireAdminApi, (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit || 50) || 50, 1), 200);
+  const db = loadAdminAuditLog();
+  res.json({ ok: true, entries: db.entries.slice(0, limit) });
+});
+
+app.post("/api/admin/audit", requireAdminApi, (req, res) => {
+  const entry = appendAdminAuditLog({
+    actor: req.body?.actor || req.get("x-admin-actor") || "",
+    action: req.body?.action,
+    txhash: req.body?.txhash,
+    target: req.body?.target,
+    details: req.body?.details,
+  });
+  res.json({ ok: true, entry });
 });
 
 app.post("/api/store-registration/resolve", rateLimit({ name: "store-registration-resolve", max: 20 }), (req, res) => {
@@ -763,67 +873,31 @@ app.get("/api/reviews/latest", async (req, res) => {
   const contract = String(req.query.contract || CFG.contract || "").trim();
   const limit = Math.min(Math.max(Number(req.query.limit || 10) || 10, 1), 50);
   const pageLimit = Math.min(Math.max(Number(req.query.page_limit || 100) || 100, 1), 100);
+  const cursor = String(req.query.cursor || "").trim();
   if (!contract) return res.status(400).json({ error: "contract is required" });
 
   try {
-    const stores = [];
-    let startAfterStore = null;
-    for (let page = 0; page < 20; page += 1) {
-      const resp = await smartQuery(contract, {
-        stores: { start_after: startAfterStore, limit: pageLimit },
-      });
-      const batch = unwrapSmartData(resp)?.stores || [];
-      stores.push(...batch);
-      if (batch.length < pageLimit) break;
-      startAfterStore = Number(batch[batch.length - 1]?.id);
-      if (!startAfterStore) break;
-    }
-
-    const reviews = [];
-    for (const store of stores) {
-      let startAfterReview = null;
-      for (let page = 0; page < 20; page += 1) {
-        const resp = await smartQuery(contract, {
-          reviews_by_store: {
-            store_id: Number(store.id),
-            start_after: startAfterReview,
-            limit: pageLimit,
-          },
-        });
-        const batch = unwrapSmartData(resp)?.reviews || [];
-        for (const review of batch) {
-          reviews.push({
-            ...review,
-            store: {
-              id: store.id,
-              store_ref: store.store_ref,
-              name: store.name,
-              category: store.category,
-              address: store.address,
-              price_range: store.price_range,
-            },
-          });
-        }
-        if (batch.length < pageLimit) break;
-        startAfterReview = Number(batch[batch.length - 1]?.id);
-        if (!startAfterReview) break;
-      }
-    }
-
-    const latest = reviews
+    const { stores, reviews } = await collectLatestReviews(contract, { pageLimit });
+    const allSorted = reviews
       .filter((review) => !review.hidden)
-      .sort((a, b) => {
-        const createdDiff = reviewSortValue(b) - reviewSortValue(a);
-        if (createdDiff !== 0) return createdDiff;
-        return Number(b?.id || 0) - Number(a?.id || 0);
-      })
+      .sort(compareReviewDesc);
+    const startIndex = cursor
+      ? Math.max(0, allSorted.findIndex((review) => review.cursor === cursor) + 1)
+      : 0;
+    const latest = allSorted
+      .slice(startIndex)
       .slice(0, limit);
+    const nextCursor = latest.length === limit
+      ? latest[latest.length - 1]?.cursor || null
+      : null;
 
     return res.json({
       ok: true,
       contract,
       stores_scanned: stores.length,
       reviews_scanned: reviews.length,
+      cursor: cursor || null,
+      next_cursor: nextCursor,
       reviews: latest,
     });
   } catch (e) {
@@ -1316,6 +1390,15 @@ app.post("/api/accounts/verify_password", rateLimit({ name: "accounts-verify-pas
 // ---- Start ----
 const PORT = process.env.PORT || 8787;
 const HOST = process.env.HOST || "0.0.0.0";
-app.listen(PORT, HOST, () => {
-  console.log(`Backend ready on http://${HOST}:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, HOST, () => {
+    console.log(`Backend ready on http://${HOST}:${PORT}`);
+  });
+}
+
+module.exports = {
+  app,
+  codeHash,
+  reviewCursor,
+  compareReviewDesc,
+};
