@@ -35,6 +35,7 @@ const JA = {
 };
 
 const EN = {
+  "認証済み店舗レビュー": "Verified restaurant guide",
   "探す": "Search",
   "店舗一覧": "Stores",
   "来店QR": "Visit QR",
@@ -524,7 +525,8 @@ function applyElementAttrs(el, lang) {
     const key = `${ORIGINAL_ATTR}${attr}`;
     const original = el.getAttribute(key) || el.getAttribute(attr) || "";
     if (!el.hasAttribute(key)) el.setAttribute(key, original);
-    el.setAttribute(attr, translateText(original, lang));
+    const translated = translateText(original, lang);
+    if (el.getAttribute(attr) !== translated) el.setAttribute(attr, translated);
   }
 }
 

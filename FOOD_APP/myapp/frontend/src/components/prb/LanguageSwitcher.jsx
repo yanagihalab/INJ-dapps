@@ -9,7 +9,7 @@ export default function LanguageSwitcher() {
   };
 
   return (
-    <div className="language-switcher" aria-label="Language switcher">
+    <div className="language-switcher" aria-label="Language switcher" data-i18n-skip>
       <button
         type="button"
         className={i18n.language?.startsWith("ja") ? "active" : ""}

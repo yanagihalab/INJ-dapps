@@ -10,10 +10,7 @@ const STORAGE_KEY = "app:lang";
 function detectLang() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved === "ja" || saved === "en") return saved;
-
-  const nav = (navigator.language || "").toLowerCase();
-  if (nav.startsWith("ja")) return "ja";
-  return "en";
+  return "ja";
 }
 
 i18n
